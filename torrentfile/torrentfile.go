@@ -20,20 +20,21 @@ type TorrentFile struct {
 	PieceLength int
 	Length      int
 	Name        string
+	Paths       []utils.FileInfo
 }
 
-func (tfile *TorrentFile) Download(to string) error {
+func (tfile *TorrentFile) Parse() (torrent.Torrent, error) {
 	var peerID [20]byte
 	if _, err := rand.Read(peerID[:]); err != nil {
-		return err
+		return torrent.Torrent{}, err
 	}
 
 	peers, err := tfile.RequestPeers(peerID, uint16(6881))
 	if err != nil {
-		return err
+		return torrent.Torrent{}, err
 	}
 
-	source := torrent.Torrent{
+	return torrent.Torrent{
 		Peers:       peers,
 		PeerID:      peerID,
 		InfoHash:    tfile.InfoHash,
@@ -41,9 +42,17 @@ func (tfile *TorrentFile) Download(to string) error {
 		PieceLength: tfile.PieceLength,
 		Length:      tfile.Length,
 		Name:        tfile.Name,
+		Paths:       tfile.Paths,
+	}, nil
+}
+
+func (tfile *TorrentFile) Download(to string) error {
+	source, err := tfile.Parse()
+	if err != nil {
+		return err
 	}
 
-	handler := torrent.DownloadWorker{}
+	handler := torrent.DownloadWorker{BasePath: filepath.Dir(to)}
 	content, err := source.Download(&handler)
 	if err != nil {
 		return err
