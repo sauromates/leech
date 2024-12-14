@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -66,6 +67,20 @@ func (tfile *TorrentFile) Download(to string) error {
 	defer outFile.Close()
 
 	if _, err := outFile.Write(content); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (tfile *TorrentFile) DownloadMultiple(dir string) error {
+	source, err := tfile.Parse()
+	if err != nil {
+		return err
+	}
+
+	handler := torrent.DownloadWorker{BasePath: dir}
+	if _, err := source.Download(&handler); err != nil {
 		return err
 	}
 
