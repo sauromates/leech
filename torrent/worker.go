@@ -15,27 +15,34 @@ const (
 	// MaxBlockSize is the largest number of bytes a request can ask for
 	MaxBlockSize = 16000
 	// MaxBacklog is the number of unfulfilled requests a client can have in its pipeline
-	MaxBacklog = 5
+	MaxBacklog = 50
 )
 
 type Worker interface {
 	Start(*Torrent, utils.Peer, chan *TaskItem, chan *TaskResult)
+	GetBasePath() string
 	download(*Client, *TaskItem) ([]byte, error)
 }
 
-type DownloadWorker struct{}
+type DownloadWorker struct {
+	BasePath string
+}
+
+func (worker *DownloadWorker) GetBasePath() string {
+	return worker.BasePath
+}
 
 func (worker *DownloadWorker) Start(torrent *Torrent, peer utils.Peer, queue chan *TaskItem, results chan *TaskResult) {
 	client, err := NewClient(peer, torrent.InfoHash, torrent.PeerID)
 	if err != nil {
-		// log.Printf("Could not handshake with %s (%s). Disconnecting\n", peer.IP, err)
+		log.Printf("Could not handshake with %s (%s). Disconnecting\n", peer.IP, err)
 		return
 	}
 
 	defer client.Conn.Close()
 
-	// log.Printf("Completed handshake with %s\n", peer.IP)
-	// log.Printf("Announcing interest to peer %s", peer.String())
+	log.Printf("Completed handshake with %s\n", peer.IP)
+	log.Printf("Announcing interest to peer %s", peer.String())
 
 	client.SendMessage(btmessage.Unchoke)
 	client.SendMessage(btmessage.Interested)
