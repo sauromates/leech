@@ -3,9 +3,9 @@ package torrent
 import (
 	"fmt"
 	"log"
+	"os"
 
 	"gihub.com/sauromates/leech/internal/utils"
-	"github.com/schollz/progressbar/v3"
 )
 
 type Torrent struct {
@@ -73,21 +73,72 @@ func (torrent *Torrent) Download(worker Worker) ([]byte, error) {
 	}
 
 	content := make([]byte, torrent.Length)
-	bar := progressbar.Default(int64(len(torrent.PieceHashes)), "Downloading torrent")
+	// bar := progressbar.Default(int64(len(torrent.PieceHashes)), "Downloading torrent")
 	done := 0
 	for done < len(torrent.PieceHashes) {
 		res := <-resultQueue
 		begin, end := torrent.pieceBounds(res.Index)
 
-		copy(content[begin:end], res.Content)
+		if len(torrent.Paths) > 0 {
+			filename, err := torrent.associatePieceWithFile(res)
+			if err != nil {
+				return nil, err
+			}
+
+			filepath := worker.GetBasePath() + "/" + filename
+			if err := os.WriteFile(filepath, content[begin:end], os.ModeAppend); err != nil {
+				return nil, err
+			}
+		} else {
+			copy(content[begin:end], res.Content)
+		}
+
 		done++
-		bar.Add(1)
+		// bar.Add(1)
 	}
 
 	close(taskQueue)
-	bar.Finish()
+	// bar.Finish()
 
 	return content, nil
+}
+
+func (torrent *Torrent) associatePieceWithFile(piece *TaskResult) (string, error) {
+	type bound struct {
+		name  string
+		begin int
+		end   int
+	}
+
+	// Assemble a slice of file boundaries
+	bounds := make([]bound, len(torrent.Paths))
+	for i, file := range torrent.Paths {
+		var begin int
+		if i == 0 {
+			begin = 0
+		} else {
+			begin = bounds[i-1].end + 1
+		}
+
+		bounds[i] = bound{file.Path[0], begin, begin + file.Length}
+	}
+
+	// Quickly search for the right interval for received piece index
+	left, right := 0, len(bounds)-1
+	for left < right {
+		mid := left + (right-left)/2
+		file := bounds[mid]
+
+		if piece.Index >= file.begin && piece.Index <= file.end {
+			return file.name, nil
+		} else if piece.Index < file.begin {
+			right = mid - 1
+		} else {
+			right = mid + 1
+		}
+	}
+
+	return "", fmt.Errorf("failed to associate piece %d with a file", piece.Index)
 }
 
 func (torrent *Torrent) pieceBounds(index int) (begin int, end int) {
