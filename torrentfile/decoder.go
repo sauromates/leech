@@ -6,14 +6,16 @@ import (
 	"fmt"
 	"io"
 
+	"gihub.com/sauromates/leech/internal/utils"
 	"github.com/jackpal/bencode-go"
 )
 
 type bencodeInfo struct {
-	Pieces      string `bencode:"pieces"`
-	PieceLength int    `bencode:"piece length"`
-	Length      int    `bencode:"length"`
-	Name        string `bencode:"name"`
+	Pieces      string           `bencode:"pieces"`
+	PieceLength int              `bencode:"piece length"`
+	Length      int              `bencode:"length"`
+	Name        string           `bencode:"name"`
+	Files       []utils.FileInfo `bencode:"files"`
 }
 
 type bencodeTorrent struct {
@@ -81,6 +83,7 @@ func (torrent *bencodeTorrent) createTorrentFile() (TorrentFile, error) {
 		PieceLength: torrent.Info.PieceLength,
 		Length:      torrent.Info.Length,
 		Name:        torrent.Info.Name,
+		Paths:       torrent.Info.Files,
 	}
 
 	return file, nil

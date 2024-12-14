@@ -16,6 +16,7 @@ type Torrent struct {
 	PieceLength int
 	Length      int
 	Name        string
+	Paths       []utils.FileInfo
 }
 
 type TaskItem struct {
@@ -36,6 +37,19 @@ type TaskProgress struct {
 	Downloaded int
 	Requested  int
 	Backlog    int
+}
+
+func (torrent Torrent) TotalSizeBytes() int {
+	if len(torrent.Paths) == 0 {
+		return torrent.Length
+	}
+
+	size := 0
+	for _, file := range torrent.Paths {
+		size += file.Length
+	}
+
+	return size
 }
 
 func (torrent *Torrent) Download(worker Worker) ([]byte, error) {
