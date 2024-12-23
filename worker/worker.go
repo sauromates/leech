@@ -14,14 +14,16 @@ const (
 	// MaxBlockSize is the largest number of bytes a request can ask for (default is 2048 Kb (16384 bytes))
 	MaxBlockSize = 16384
 	// MaxBacklog is the number of unfulfilled requests a client can have in its pipeline
-	MaxBacklog = 5
+	MaxBacklog = 50
 )
 
 type Worker struct {
 	Peer *client.Client
 }
 
-func (worker *Worker) Start(queue chan *TaskItem, results chan *TaskResult) error {
+// Run starts listening to a task queue until it's empty or until a
+// download error occurs
+func (worker *Worker) Run(queue chan *TaskItem, results chan *TaskResult) error {
 	for piece := range queue {
 		if !worker.Peer.BitField.HasPiece(piece.Index) {
 			queue <- piece
@@ -58,6 +60,8 @@ func (worker *Worker) downloadPiece(piece *TaskItem) ([]byte, error) {
 		Content: make([]byte, piece.Length),
 	}
 
+	// Setting a deadline helps get unresponsive peers unstuck.
+	// 30 seconds is more than enough time to download a 262 KB piece
 	worker.Peer.Conn.SetDeadline(time.Now().Add(30 * time.Second))
 	defer worker.Peer.Conn.SetDeadline(time.Time{})
 
@@ -71,7 +75,6 @@ func (worker *Worker) downloadPiece(piece *TaskItem) ([]byte, error) {
 				}
 
 				if err := worker.Peer.RequestPiece(piece.Index, taskState.Requested, blockSize); err != nil {
-					log.Panicf("piece request failed: %s", err)
 					return nil, err
 				}
 
@@ -80,7 +83,8 @@ func (worker *Worker) downloadPiece(piece *TaskItem) ([]byte, error) {
 			}
 		}
 
-		if err := taskState.Read(); err != nil {
+		if err := taskState.ReadMessage(); err != nil {
+			log.Fatal("here")
 			return nil, err
 		}
 	}

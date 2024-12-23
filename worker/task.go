@@ -26,8 +26,8 @@ type TaskProgress struct {
 	Backlog    int
 }
 
-func (state *TaskProgress) Read() error {
-	msg, err := state.Client.ReadMessage()
+func (state *TaskProgress) ReadMessage() error {
+	msg, err := state.Client.Read()
 	if err != nil {
 		return err
 	}

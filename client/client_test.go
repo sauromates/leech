@@ -26,7 +26,7 @@ func TestReadMessage(t *testing.T) {
 	_, err := server.Write(msgContents)
 	require.Nil(t, err)
 
-	msg, err := conn.ReadMessage()
+	msg, err := conn.Read()
 
 	require.Nil(t, err)
 	assert.Equal(t, expected, msg)

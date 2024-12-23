@@ -10,6 +10,7 @@ import (
 	"github.com/sauromates/leech/internal/utils"
 )
 
+// Client represents a TCP connection with a peer
 type Client struct {
 	Conn     net.Conn
 	IsChoked bool
@@ -19,9 +20,9 @@ type Client struct {
 	peerID   utils.BTString
 }
 
-// ReadMessage passes client connection instance as io.Reader to message parser
+// Read passes client connection instance as io.Reader to message parser
 // and returns parsed struct
-func (client *Client) ReadMessage() (*message.Message, error) {
+func (client *Client) Read() (*message.Message, error) {
 	return message.Read(client.Conn)
 }
 
@@ -47,7 +48,7 @@ func (client *Client) AnnounceInterest() error {
 
 // sendMessage writes any message to a TCP connection pipe
 func (client *Client) sendMessage(msg *message.Message) error {
-	client.Conn.SetDeadline(time.Now().Add(10 * time.Second))
+	client.Conn.SetDeadline(time.Now().Add(3 * time.Second))
 	defer client.Conn.SetDeadline(time.Time{})
 
 	_, err := client.Conn.Write(msg.Serialize())
