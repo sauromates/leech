@@ -9,6 +9,8 @@ import (
 	"github.com/sauromates/leech/worker"
 )
 
+const maxConnections int = 5
+
 type Torrent interface {
 	// TotalSizeBytes calculates total size of downloadable content for torrent
 	TotalSizeBytes() int
@@ -52,23 +54,22 @@ func (torrent *BaseTorrent) PieceSize(index int) int {
 	return end - begin
 }
 
-func (torrent *BaseTorrent) startWorker(peer *peers.Peer, queue chan *worker.TaskItem, results chan *worker.TaskResult, peers chan *peers.Peer) {
-	client, err := client.Create(*peer, torrent.ReadInfoHash(), torrent.ReadPeerID())
+func (torrent *BaseTorrent) startWorker(peer peers.Peer, queue chan *worker.TaskItem, results chan *worker.TaskResult, peers chan *peers.Peer) {
+	client, err := client.Create(peer, torrent.ReadInfoHash(), torrent.ReadPeerID())
 	if err != nil {
 		log.Printf("Could not handshake with %s (%s). Disconnecting\n", peer.IP, err)
 		return
 	}
 
-	defer client.Conn.Close()
-
 	log.Printf("Completed handshake with %s\n", peer.IP)
-	log.Printf("Announcing interest to peer %s", peer.String())
+
+	defer client.Conn.Close()
 
 	client.RequestUnchoke()
 	client.AnnounceInterest()
 
 	worker := &worker.Worker{Peer: client}
-	if err := worker.Start(queue, results); err != nil {
-		peers <- peer
+	if err := worker.Run(queue, results); err != nil {
+		peers <- &peer
 	}
 }

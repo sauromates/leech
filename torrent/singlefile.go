@@ -38,8 +38,13 @@ func (torrent *SingleFileTorrent) Download(path string) ([]byte, error) {
 
 			done++
 		case peer := <-pool:
-			go torrent.startWorker(peer, queue, results, pool)
 			numWorkers := runtime.NumGoroutine() - 1
+			if numWorkers <= maxConnections {
+				go torrent.startWorker(*peer, queue, results, pool)
+			} else {
+				pool <- peer
+			}
+
 			log.Printf("Started worker for peer %s, currently %d are running", peer.String(), numWorkers)
 		}
 	}

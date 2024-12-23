@@ -47,11 +47,15 @@ func (torrent *MultiFileTorrent) Download(path string) ([]byte, error) {
 				return nil, err
 			}
 
-			log.Printf("Downloaded piece %d, %d left", piece.Index, len(torrent.PieceHashes))
 			done++
 		case peer := <-pool:
-			go torrent.startWorker(peer, queue, results, pool)
 			numWorkers := runtime.NumGoroutine() - 1
+			if numWorkers <= maxConnections {
+				go torrent.startWorker(*peer, queue, results, pool)
+			} else {
+				pool <- peer
+			}
+
 			log.Printf("Started worker for peer %s, currently %d are running", peer.String(), numWorkers)
 		}
 	}
@@ -63,6 +67,8 @@ func (torrent *MultiFileTorrent) Download(path string) ([]byte, error) {
 	return []byte{}, nil
 }
 
+// Write populates a file with downloaded piece. BasePath is a directory where
+// any downloading files should be stored.
 func (torrent *MultiFileTorrent) Write(basePath string, piece *worker.TaskResult) error {
 	filename, err := torrent.WhichFile(piece.Index)
 	if err != nil {
