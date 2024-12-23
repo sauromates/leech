@@ -6,7 +6,7 @@ import (
 	"os"
 	"text/template"
 
-	"gihub.com/sauromates/leech/torrentfile"
+	"github.com/sauromates/leech/torrentfile"
 )
 
 func main() {
@@ -16,12 +16,13 @@ func main() {
 		log.Fatal(err)
 	}
 
-	if err := printTorrentDetails(torrentfile); err != nil {
-		log.Fatal(err)
-	}
-
 	var downloadError error
+
 	if len(torrentfile.Paths) > 0 {
+		if err := printTorrentDetails(torrentfile); err != nil {
+			log.Fatal(err)
+		}
+
 		dir, err := createDownloadDir(torrentfile.Name)
 		if err != nil {
 			log.Fatal(err)
@@ -37,6 +38,7 @@ func main() {
 	}
 }
 
+// createDownloadDir creates a directory to store downloaded files
 func createDownloadDir(torrentName string) (string, error) {
 	outputPath, err := os.Getwd()
 	if err != nil {
@@ -54,8 +56,10 @@ func createDownloadDir(torrentName string) (string, error) {
 	return targetDir, nil
 }
 
-func printTorrentDetails(torrent torrentfile.TorrentFile) error {
-	decoded, err := torrent.Parse()
+// printTorrentDetails parses torrent file and prints detailed information
+// about it using default `tmpl` file
+func printTorrentDetails(tf torrentfile.TorrentFile) error {
+	decoded, err := tf.Parse()
 	if err != nil {
 		return err
 	}
