@@ -6,14 +6,28 @@ import (
 	"fmt"
 	"io"
 
-	"gihub.com/sauromates/leech/internal/utils"
 	"github.com/jackpal/bencode-go"
+	"github.com/sauromates/leech/internal/utils"
 )
 
 type bencodeInfo struct {
 	Pieces      string           `bencode:"pieces"`
 	PieceLength int              `bencode:"piece length"`
 	Length      int              `bencode:"length"`
+	Name        string           `bencode:"name"`
+	Files       []utils.FileInfo `bencode:"files"`
+}
+
+type singleFileBencodeInfo struct {
+	Pieces      string `bencode:"pieces"`
+	PieceLength int    `bencode:"piece length"`
+	Length      int    `bencode:"length"`
+	Name        string `bencode:"name"`
+}
+
+type multiFileBencodeInfo struct {
+	Pieces      string           `bencode:"pieces"`
+	PieceLength int              `bencode:"piece length"`
 	Name        string           `bencode:"name"`
 	Files       []utils.FileInfo `bencode:"files"`
 }
@@ -37,7 +51,25 @@ func DecodeTorrentFile(reader io.Reader) (*bencodeTorrent, error) {
 // Hashes whole torrent info via sha1.
 func (info *bencodeInfo) hash() ([20]byte, error) {
 	var buffer bytes.Buffer
-	if err := bencode.Marshal(&buffer, *info); err != nil {
+	var hashableInfo interface{}
+
+	if len(info.Files) == 0 {
+		hashableInfo = singleFileBencodeInfo{
+			Pieces:      info.Pieces,
+			PieceLength: info.PieceLength,
+			Length:      info.Length,
+			Name:        info.Name,
+		}
+	} else {
+		hashableInfo = multiFileBencodeInfo{
+			Pieces:      info.Pieces,
+			PieceLength: info.PieceLength,
+			Name:        info.Name,
+			Files:       info.Files,
+		}
+	}
+
+	if err := bencode.Marshal(&buffer, hashableInfo); err != nil {
 		return [20]byte{}, err
 	}
 
@@ -50,16 +82,17 @@ func (info *bencodeInfo) hashPieces() ([][20]byte, error) {
 	buffer, hashLen := []byte(info.Pieces), 20
 
 	if len(buffer)%hashLen != 0 {
-		return nil, fmt.Errorf("Received malformed pieces of length %d", len(buffer))
+		return nil, fmt.Errorf("received malformed pieces of length %d", len(buffer))
 	}
 
+	// Calculate how many pieces there are by splitting the whole string by 20 bytes
 	hashCount := len(buffer) / hashLen
 	hashes := make([][20]byte, hashCount)
 
+	// Iterate over each 20 byte chunk and put it into the slice of hashes
 	for i := 0; i < hashCount; i++ {
-		// I have no idea what is going on here
-		// @todo return later
-		copy(hashes[i][:], buffer[i*hashLen:(i+1)*hashLen])
+		begin, end := i*hashLen, (i+1)*hashLen
+		copy(hashes[i][:], buffer[begin:end])
 	}
 
 	return hashes, nil
@@ -81,7 +114,7 @@ func (torrent *bencodeTorrent) createTorrentFile() (TorrentFile, error) {
 		InfoHash:    infoHash,
 		PieceHashes: pieceHashes,
 		PieceLength: torrent.Info.PieceLength,
-		Length:      torrent.Info.Length,
+		Length:      &torrent.Info.Length,
 		Name:        torrent.Info.Name,
 		Paths:       torrent.Info.Files,
 	}
