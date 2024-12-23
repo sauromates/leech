@@ -2,49 +2,69 @@ package torrentfile
 
 import (
 	"crypto/rand"
-	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
-	"time"
 
-	"gihub.com/sauromates/leech/internal/utils"
-	"gihub.com/sauromates/leech/torrent"
 	"github.com/jackpal/bencode-go"
+	"github.com/sauromates/leech/internal/utils"
+	"github.com/sauromates/leech/torrent"
 )
 
 type TorrentFile struct {
 	Announce    string
-	InfoHash    [20]byte
-	PieceHashes [][20]byte
+	InfoHash    utils.BTString
+	PieceHashes []utils.BTString
 	PieceLength int
-	Length      int
+	Length      *int
 	Name        string
 	Paths       []utils.FileInfo
 }
 
-func (tfile *TorrentFile) Parse() (torrent.Torrent, error) {
-	var peerID [20]byte
-	if _, err := rand.Read(peerID[:]); err != nil {
-		return torrent.Torrent{}, err
-	}
-
-	peers, err := tfile.RequestPeers(peerID, uint16(6881))
+func Open(path string) (TorrentFile, error) {
+	file, err := os.Open(path)
 	if err != nil {
-		return torrent.Torrent{}, err
+		return TorrentFile{}, err
 	}
 
-	return torrent.Torrent{
+	defer file.Close()
+
+	torrent := bencodeTorrent{}
+	if err := bencode.Unmarshal(file, &torrent); err != nil {
+		return TorrentFile{}, err
+	}
+
+	return torrent.createTorrentFile()
+}
+
+func (tf *TorrentFile) Parse() (torrent.Torrent, error) {
+	var peerID utils.BTString
+	if _, err := rand.Read(peerID[:]); err != nil {
+		return nil, err
+	}
+
+	peers, err := tf.requestPeers(peerID, uint16(49160))
+	if err != nil {
+		return nil, err
+	}
+
+	baseMeta := torrent.BaseTorrent{
 		Peers:       peers,
 		PeerID:      peerID,
-		InfoHash:    tfile.InfoHash,
-		PieceHashes: tfile.PieceHashes,
-		PieceLength: tfile.PieceLength,
-		Length:      tfile.Length,
-		Name:        tfile.Name,
-		Paths:       tfile.Paths,
-	}, nil
+		InfoHash:    tf.InfoHash,
+		PieceHashes: tf.PieceHashes,
+		PieceLength: tf.PieceLength,
+		Name:        tf.Name,
+		Length:      tf.GetLength(),
+	}
+
+	var parsed torrent.Torrent
+	if len(tf.Paths) > 0 {
+		parsed = &torrent.MultiFileTorrent{BaseTorrent: baseMeta, Paths: tf.Paths}
+	} else {
+		parsed = &torrent.SingleFileTorrent{BaseTorrent: baseMeta}
+	}
+
+	return parsed, nil
 }
 
 func (tfile *TorrentFile) Download(to string) error {
@@ -53,8 +73,7 @@ func (tfile *TorrentFile) Download(to string) error {
 		return err
 	}
 
-	handler := torrent.DownloadWorker{BasePath: filepath.Dir(to)}
-	content, err := source.Download(&handler)
+	content, err := source.Download(filepath.Dir(to))
 	if err != nil {
 		return err
 	}
@@ -79,69 +98,22 @@ func (tfile *TorrentFile) DownloadMultiple(dir string) error {
 		return err
 	}
 
-	handler := torrent.DownloadWorker{BasePath: dir}
-	if _, err := source.Download(&handler); err != nil {
+	if _, err := source.Download(dir); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (torrent *TorrentFile) trackerUrl(peerID [20]byte, port uint16) (string, error) {
-	trackerURL, err := url.Parse(torrent.Announce)
-	if err != nil {
-		return "", err
+func (torrent *TorrentFile) GetLength() int {
+	if len(torrent.Paths) == 0 {
+		return *torrent.Length
 	}
 
-	queryParams := url.Values{
-		"info_hash":  []string{string(torrent.InfoHash[:])},
-		"peer_id":    []string{string(peerID[:])},
-		"port":       []string{strconv.Itoa(int(port))},
-		"uploaded":   []string{"0"},
-		"downloaded": []string{"0"},
-		"compact":    []string{"1"},
-		"left":       []string{strconv.Itoa(torrent.Length)},
+	size := 0
+	for _, file := range torrent.Paths {
+		size += file.Length
 	}
 
-	trackerURL.RawQuery = queryParams.Encode()
-
-	return trackerURL.String(), nil
-}
-
-func (file *TorrentFile) RequestPeers(peerID [20]byte, port uint16) ([]utils.Peer, error) {
-	announceUrl, err := file.trackerUrl(peerID, port)
-	if err != nil {
-		return nil, err
-	}
-
-	httpClient := &http.Client{Timeout: 15 * time.Second}
-	res, err := httpClient.Get(announceUrl)
-	if err != nil {
-		return nil, err
-	}
-
-	defer res.Body.Close()
-
-	trackerRes := BencodeTrackerResponse{}
-	if err := bencode.Unmarshal(res.Body, &trackerRes); err != nil {
-		return nil, err
-	}
-
-	return utils.UnmarshalPeers([]byte(trackerRes.Peers))
-}
-
-func Open(path string) (TorrentFile, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return TorrentFile{}, err
-	}
-
-	defer file.Close()
-
-	torrent := bencodeTorrent{}
-	if err := bencode.Unmarshal(file, &torrent); err != nil {
-		return TorrentFile{}, err
-	}
-
-	return torrent.createTorrentFile()
+	return size
 }

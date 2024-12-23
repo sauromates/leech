@@ -49,7 +49,7 @@ func DecodeTorrentFile(reader io.Reader) (*bencodeTorrent, error) {
 }
 
 // Hashes whole torrent info via sha1.
-func (info *bencodeInfo) hash() ([20]byte, error) {
+func (info *bencodeInfo) hash() (utils.BTString, error) {
 	var buffer bytes.Buffer
 	var hashableInfo interface{}
 
@@ -70,7 +70,7 @@ func (info *bencodeInfo) hash() ([20]byte, error) {
 	}
 
 	if err := bencode.Marshal(&buffer, hashableInfo); err != nil {
-		return [20]byte{}, err
+		return utils.BTString{}, err
 	}
 
 	return sha1.Sum(buffer.Bytes()), nil
@@ -78,7 +78,7 @@ func (info *bencodeInfo) hash() ([20]byte, error) {
 
 // Creates a hash for each parsed piece and wraps them all in a slice
 // resulting in infohash used to uniquely identify file
-func (info *bencodeInfo) hashPieces() ([][20]byte, error) {
+func (info *bencodeInfo) hashPieces() ([]utils.BTString, error) {
 	buffer, hashLen := []byte(info.Pieces), 20
 
 	if len(buffer)%hashLen != 0 {
@@ -87,7 +87,7 @@ func (info *bencodeInfo) hashPieces() ([][20]byte, error) {
 
 	// Calculate how many pieces there are by splitting the whole string by 20 bytes
 	hashCount := len(buffer) / hashLen
-	hashes := make([][20]byte, hashCount)
+	hashes := make([]utils.BTString, hashCount)
 
 	// Iterate over each 20 byte chunk and put it into the slice of hashes
 	for i := 0; i < hashCount; i++ {
