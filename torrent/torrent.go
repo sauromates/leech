@@ -1,147 +1,41 @@
 package torrent
 
 import (
-	"fmt"
 	"log"
-	"os"
 
-	"gihub.com/sauromates/leech/internal/utils"
+	"github.com/sauromates/leech/client"
+	"github.com/sauromates/leech/internal/peers"
+	"github.com/sauromates/leech/internal/utils"
+	"github.com/sauromates/leech/worker"
 )
 
-type Torrent struct {
-	Peers       []utils.Peer
-	PeerID      [20]byte
-	InfoHash    [20]byte
-	PieceHashes [][20]byte
+type Torrent interface {
+	// TotalSizeBytes calculates total size of downloadable content for torrent
+	TotalSizeBytes() int
+	Download(path string) ([]byte, error)
+	ReadInfoHash() utils.BTString
+	ReadPeerID() utils.BTString
+}
+
+type BaseTorrent struct {
+	Peers       []peers.Peer
+	PeerID      utils.BTString
+	InfoHash    utils.BTString
+	PieceHashes []utils.BTString
 	PieceLength int
-	Length      int
 	Name        string
-	Paths       []utils.FileInfo
+	Length      int
 }
 
-type TaskItem struct {
-	Index  int
-	Hash   [20]byte
-	Length int
+func (torrent *BaseTorrent) ReadInfoHash() utils.BTString {
+	return torrent.InfoHash
 }
 
-type TaskResult struct {
-	Index   int
-	Content []byte
+func (torrent *BaseTorrent) ReadPeerID() utils.BTString {
+	return torrent.PeerID
 }
 
-type TaskProgress struct {
-	Index      int
-	Client     *Client
-	Content    []byte
-	Downloaded int
-	Requested  int
-	Backlog    int
-}
-
-func (torrent Torrent) TotalSizeBytes() int {
-	if len(torrent.Paths) == 0 {
-		return torrent.Length
-	}
-
-	size := 0
-	for _, file := range torrent.Paths {
-		size += file.Length
-	}
-
-	return size
-}
-
-func (torrent *Torrent) Download(worker Worker) ([]byte, error) {
-	log.Printf(
-		"Starting to download \"%s\" from %d peers (%d pieces expected)\n",
-		torrent.Name,
-		len(torrent.Peers),
-		len(torrent.PieceHashes),
-	)
-
-	taskQueue := make(chan *TaskItem, len(torrent.PieceHashes))
-	resultQueue := make(chan *TaskResult)
-
-	for index, hash := range torrent.PieceHashes {
-		length := torrent.pieceSize(index)
-		taskQueue <- &TaskItem{index, hash, length}
-	}
-
-	for _, peer := range torrent.Peers {
-		go worker.Start(torrent, peer, taskQueue, resultQueue)
-	}
-
-	content := make([]byte, torrent.Length)
-	// bar := progressbar.Default(int64(len(torrent.PieceHashes)), "Downloading torrent")
-	done := 0
-	for done < len(torrent.PieceHashes) {
-		res := <-resultQueue
-		begin, end := torrent.pieceBounds(res.Index)
-
-		if len(torrent.Paths) > 0 {
-			filename, err := torrent.associatePieceWithFile(res)
-			if err != nil {
-				return nil, err
-			}
-
-			filepath := worker.GetBasePath() + "/" + filename
-			if err := os.WriteFile(filepath, content[begin:end], os.ModeAppend); err != nil {
-				return nil, err
-			}
-		} else {
-			copy(content[begin:end], res.Content)
-		}
-
-		done++
-		// bar.Add(1)
-	}
-
-	close(taskQueue)
-	// bar.Finish()
-
-	return content, nil
-}
-
-func (torrent *Torrent) associatePieceWithFile(piece *TaskResult) (string, error) {
-	type bound struct {
-		name  string
-		begin int
-		end   int
-	}
-
-	// Assemble a slice of file boundaries
-	bounds := make([]bound, len(torrent.Paths))
-	for i, file := range torrent.Paths {
-		var begin int
-		if i == 0 {
-			begin = 0
-		} else {
-			begin = bounds[i-1].end + 1
-		}
-
-		bounds[i] = bound{file.Path[0], begin, begin + file.Length}
-	}
-
-	// Quickly search for the right interval for received piece index
-	left, right := 0, len(bounds)-1
-	for left < right {
-		mid := left + (right-left)/2
-		file := bounds[mid]
-
-		if piece.Index >= file.begin && piece.Index <= file.end {
-			return file.name, nil
-		} else if piece.Index < file.begin {
-			right = mid - 1
-		} else {
-			right = mid + 1
-		}
-	}
-
-	return "", fmt.Errorf("failed to associate piece %d with a file", piece.Index)
-}
-
-func (torrent *Torrent) pieceBounds(index int) (begin int, end int) {
+func (torrent *BaseTorrent) PieceBounds(index int) (begin int, end int) {
 	begin = index * torrent.PieceLength
 	end = begin + torrent.PieceLength
 
@@ -152,43 +46,29 @@ func (torrent *Torrent) pieceBounds(index int) (begin int, end int) {
 	return begin, end
 }
 
-func (torrent *Torrent) pieceSize(index int) int {
-	begin, end := torrent.pieceBounds(index)
+func (torrent *BaseTorrent) PieceSize(index int) int {
+	begin, end := torrent.PieceBounds(index)
 
 	return end - begin
 }
 
-func (state *TaskProgress) ReadMessage() error {
-	msg, err := state.Client.Read()
+func (torrent *BaseTorrent) startWorker(peer *peers.Peer, queue chan *worker.TaskItem, results chan *worker.TaskResult, peers chan *peers.Peer) {
+	client, err := client.Create(*peer, torrent.ReadInfoHash(), torrent.ReadPeerID())
 	if err != nil {
-		return fmt.Errorf("failed to read message (%s)", err)
+		log.Printf("Could not handshake with %s (%s). Disconnecting\n", peer.IP, err)
+		return
 	}
 
-	if msg == nil {
-		return nil
+	defer client.Conn.Close()
+
+	log.Printf("Completed handshake with %s\n", peer.IP)
+	log.Printf("Announcing interest to peer %s", peer.String())
+
+	client.RequestUnchoke()
+	client.AnnounceInterest()
+
+	worker := &worker.Worker{Peer: client}
+	if err := worker.Start(queue, results); err != nil {
+		peers <- peer
 	}
-
-	switch msg.ID {
-	case MsgUnchoke:
-		state.Client.IsChoked = false
-	case MsgChoke:
-		state.Client.IsChoked = true
-	case MsgHave:
-		index, err := ParseHave(msg)
-		if err != nil {
-			return err
-		}
-
-		state.Client.BitField.SetPiece(index)
-	case MsgPiece:
-		downloaded, err := ParsePiece(state.Index, state.Content, msg)
-		if err != nil {
-			return err
-		}
-
-		state.Downloaded += downloaded
-		state.Backlog--
-	}
-
-	return nil
 }
