@@ -1,6 +1,6 @@
 package utils
 
 type FileInfo struct {
-	Length int
-	Path   []string
+	Length int      `bencode:"length"`
+	Path   []string `bencode:"path"`
 }
