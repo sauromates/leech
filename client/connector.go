@@ -27,10 +27,11 @@ func Create(peer peers.Peer, infoHash, peerID utils.BTString) (*Client, error) {
 
 	bitField, err := getBitField(conn)
 	if err != nil {
+		conn.Close()
 		return nil, err
 	}
 
-	client := &Client{
+	client := Client{
 		Conn:     conn,
 		IsChoked: true,
 		BitField: bitField,
@@ -39,7 +40,7 @@ func Create(peer peers.Peer, infoHash, peerID utils.BTString) (*Client, error) {
 		peerID:   peerID,
 	}
 
-	return client, nil
+	return &client, nil
 }
 
 // completeHandshake creates and sends new handshake message and reads the
@@ -66,7 +67,7 @@ func completeHandshake(conn net.Conn, infoHash, peerID utils.BTString) (*handsha
 }
 
 func getBitField(conn net.Conn) (bitfield.BitField, error) {
-	conn.SetDeadline(time.Now().Add(10 * time.Second))
+	conn.SetDeadline(time.Now().Add(5 * time.Second))
 	defer conn.SetDeadline(time.Time{})
 
 	msg, err := message.Read(conn)
