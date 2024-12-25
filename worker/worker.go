@@ -91,12 +91,3 @@ func (worker *Worker) downloadPiece(piece *TaskItem) ([]byte, error) {
 
 	return taskState.Content, nil
 }
-
-func verifyPiece(piece *TaskItem, content []byte) error {
-	hash := sha1.Sum(content)
-	if !bytes.Equal(hash[:], piece.Hash[:]) {
-		return fmt.Errorf("piece %d failed integrity check", piece.Index)
-	}
-
-	return nil
-}
