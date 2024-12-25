@@ -53,7 +53,7 @@ func TestRequestUnchoke(t *testing.T) {
 	client, server := createClientAndServer(t)
 	peer := Client{Conn: client}
 
-	if err := peer.RequestUnchoke(); err != nil {
+	if err := peer.Unchoke(); err != nil {
 		t.Error(err)
 	}
 
