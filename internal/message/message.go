@@ -34,6 +34,9 @@ func Create(code BTMsgID) *Message {
 func Read(r io.Reader) (*Message, error) {
 	lenBuf := make([]byte, 4)
 	if _, err := io.ReadFull(r, lenBuf); err != nil {
+		if err == io.EOF {
+			return nil, fmt.Errorf("received empty message")
+		}
 		return nil, err
 	}
 
@@ -50,7 +53,7 @@ func Read(r io.Reader) (*Message, error) {
 	return &Message{BTMsgID(payload[0]), payload[1:]}, nil
 }
 
-// Serialize serializes a message into a buffer of the form <length><message ID><payload>
+// Serialize serializes a message into a buffer of the form <length><message ID><payload>.
 // Interprets `nil` as a keep-alive message
 func (msg *Message) Serialize() []byte {
 	if msg == nil {
@@ -58,7 +61,7 @@ func (msg *Message) Serialize() []byte {
 	}
 
 	length := uint32(len(msg.Payload) + 1) // Payload + 1 byte for ID
-	payload := make([]byte, length+4)
+	payload := make([]byte, 4+length)      // First 4 bytes are for length
 
 	binary.BigEndian.PutUint32(payload[0:4], length) // Put length at the beginning of message
 	payload[4] = byte(msg.ID)                        // Put ID after length
@@ -67,35 +70,41 @@ func (msg *Message) Serialize() []byte {
 	return payload
 }
 
+// Name returns human-readable string representation of message ID
+func (msg *Message) Name() string {
+	if msg == nil {
+		return "KeepAlive"
+	}
+
+	switch msg.ID {
+	case Choke:
+		return "Choke"
+	case Unchoke:
+		return "Unchoke"
+	case Interested:
+		return "Interested"
+	case NotInterested:
+		return "NotInterested"
+	case Have:
+		return "Have"
+	case BitField:
+		return "BitField"
+	case Request:
+		return "Request"
+	case Piece:
+		return "Piece"
+	case Cancel:
+		return "Cancel"
+	default:
+		return fmt.Sprintf("Unknown#%d", msg.ID)
+	}
+}
+
+// String transforms message into a string
 func (msg *Message) String() string {
 	if msg == nil {
 		return "KeepAlive"
 	}
 
-	var name string
-
-	switch msg.ID {
-	case Choke:
-		name = "Choke"
-	case Unchoke:
-		name = "Unchoke"
-	case Interested:
-		name = "Interested"
-	case NotInterested:
-		name = "NotInterested"
-	case Have:
-		name = "Have"
-	case BitField:
-		name = "BitField"
-	case Request:
-		name = "Request"
-	case Piece:
-		name = "Piece"
-	case Cancel:
-		name = "Cancel"
-	default:
-		name = fmt.Sprintf("Unknown#%d", msg.ID)
-	}
-
-	return fmt.Sprintf("%s [%d]", name, len(msg.Payload))
+	return fmt.Sprintf("%s [%d]", msg.Name(), len(msg.Payload))
 }
