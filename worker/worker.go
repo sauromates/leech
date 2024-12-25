@@ -57,7 +57,7 @@ func (worker *Worker) Run() error {
 			return err
 		}
 
-		if err := piece.checkIntegrity(content); err != nil {
+		if err := piece.verifyHashSum(content); err != nil {
 			log.Printf("[ERROR] Invalid piece: %s", err)
 			worker.queue <- piece
 
