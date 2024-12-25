@@ -1,7 +1,6 @@
 package client
 
 import (
-	"bytes"
 	"fmt"
 	"net"
 	"time"
@@ -15,7 +14,7 @@ import (
 
 // Create opens a new TCP connection to a peer
 func Create(peer peers.Peer, infoHash, peerID utils.BTString) (*Client, error) {
-	conn, err := net.DialTimeout("tcp", peer.String(), 10*time.Second)
+	conn, err := net.DialTimeout("tcp", peer.String(), 3*time.Second)
 	if err != nil {
 		return nil, err
 	}
@@ -54,13 +53,9 @@ func completeHandshake(conn net.Conn, infoHash, peerID utils.BTString) (*handsha
 		return nil, err
 	}
 
-	response, err := handshake.Read(conn)
+	response, err := handshake.Read(conn, request.InfoHash)
 	if err != nil {
 		return nil, err
-	}
-
-	if !bytes.Equal(response.InfoHash[:], request.InfoHash[:]) {
-		return nil, fmt.Errorf("torrent info hash mismatch")
 	}
 
 	return response, nil

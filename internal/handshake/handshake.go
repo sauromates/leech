@@ -1,6 +1,7 @@
 package handshake
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 
@@ -22,7 +23,7 @@ func Create(infoHash, peerID utils.BTString) *Handshake {
 }
 
 // Read reads received handshake message to a struct
-func Read(r io.Reader) (*Handshake, error) {
+func Read(r io.Reader, expectedHash utils.BTString) (*Handshake, error) {
 	lenBuf := make([]byte, 1)
 	if _, err := io.ReadFull(r, lenBuf); err != nil {
 		return nil, err
@@ -45,6 +46,10 @@ func Read(r io.Reader) (*Handshake, error) {
 
 	copy(infoHash[:], payload[infoHashStart:infoHashEnd])
 	copy(peerID[:], payload[infoHashEnd:])
+
+	if !bytes.Equal(infoHash[:], expectedHash[:]) {
+		return nil, fmt.Errorf("handshake integrity failed")
+	}
 
 	return &Handshake{pstr, infoHash, peerID}, nil
 }
