@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"time"
 
 	"github.com/sauromates/leech/internal/peers"
 	"github.com/sauromates/leech/internal/utils"
@@ -53,6 +54,7 @@ func (torrent *MultiFileTorrent) Download(path string) ([]byte, error) {
 			if numWorkers <= maxConnections {
 				go torrent.startWorker(*peer, queue, results, pool)
 			} else {
+				time.Sleep(5 * time.Second)
 				pool <- peer
 			}
 
