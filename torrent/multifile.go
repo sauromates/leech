@@ -54,11 +54,11 @@ func (torrent *MultiFileTorrent) Download(path string) ([]byte, error) {
 			if numWorkers <= maxConnections {
 				go torrent.startWorker(*peer, queue, results, pool)
 			} else {
-				time.Sleep(5 * time.Second)
+				time.Sleep(1 * time.Second)
 				pool <- peer
 			}
 
-			log.Printf("Started worker for peer %s, currently %d are running", peer.String(), numWorkers)
+			log.Printf("[INFO] Connecting to %s", peer.String())
 		}
 	}
 
