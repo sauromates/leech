@@ -51,6 +51,9 @@ func Create(ti TorrentConnInfo, peer peers.Peer, queue chan *TaskItem, results c
 func (worker *Worker) Run() error {
 	defer worker.Peer.Conn.Close()
 
+	worker.Peer.Unchoke()
+	worker.Peer.AnnounceInterest()
+
 	for piece := range worker.queue {
 		if !worker.Peer.BitField.HasPiece(piece.Index) {
 			worker.queue <- piece

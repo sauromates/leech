@@ -34,9 +34,7 @@ func Create(peer peers.Peer, infoHash, peerID utils.BTString) (*Client, error) {
 		Conn:     conn,
 		IsChoked: true,
 		BitField: bitField,
-		peer:     peer,
-		infoHash: infoHash,
-		peerID:   peerID,
+		Peer:     peer,
 	}
 
 	return &client, nil
