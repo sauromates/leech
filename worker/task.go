@@ -1,6 +1,10 @@
 package worker
 
 import (
+	"bytes"
+	"crypto/sha1"
+	"fmt"
+
 	"github.com/sauromates/leech/client"
 	"github.com/sauromates/leech/internal/message"
 	"github.com/sauromates/leech/internal/utils"
@@ -56,6 +60,16 @@ func (state *TaskProgress) ReadMessage() error {
 
 		state.Downloaded += downloaded
 		state.Backlog--
+	}
+
+	return nil
+}
+
+// checkIntegrity compares sha1 hash sums of a piece and downloaded content
+func (piece *TaskItem) checkIntegrity(content []byte) error {
+	hash := sha1.Sum(content)
+	if !bytes.Equal(hash[:], piece.Hash[:]) {
+		return fmt.Errorf("piece %d failed integrity check", piece.Index)
 	}
 
 	return nil
