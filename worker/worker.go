@@ -9,13 +9,6 @@ import (
 	"github.com/sauromates/leech/internal/utils"
 )
 
-const (
-	// MaxBlockSize is the largest number of bytes a request can ask for (default is 2048 Kb (16384 bytes))
-	MaxBlockSize = 16384
-	// MaxBacklog is the number of unfulfilled requests a client can have in its pipeline
-	MaxBacklog = 5
-)
-
 // Worker listens to tasks queue and processes each received task.
 // Peer field here is actually a connection here.
 type Worker struct {
