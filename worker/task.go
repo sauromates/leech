@@ -89,8 +89,8 @@ func (state *TaskProgress) blockSize(piece *TaskItem) int {
 	return MaxBlockSize
 }
 
-// checkIntegrity compares sha1 hash sums of a piece and downloaded content
-func (piece *TaskItem) checkIntegrity(content []byte) error {
+// verifyHashSum compares sha1 hash sums of a piece and downloaded content
+func (piece *TaskItem) verifyHashSum(content []byte) error {
 	hash := sha1.Sum(content)
 	if !bytes.Equal(hash[:], piece.Hash[:]) {
 		return fmt.Errorf("piece %d failed integrity check", piece.Index)
