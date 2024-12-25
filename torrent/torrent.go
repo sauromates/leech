@@ -1,6 +1,8 @@
 package torrent
 
 import (
+	"log"
+
 	"github.com/sauromates/leech/internal/peers"
 	"github.com/sauromates/leech/internal/utils"
 	"github.com/sauromates/leech/worker"
@@ -73,6 +75,11 @@ func (torrent *BaseTorrent) startWorker(
 
 	worker, err := worker.Create(info, peer, queue, results)
 	if err != nil {
+		log.Printf("[ERROR] Connection with %s failed. Reason: %s", peer.String(), err)
+		if len(peers) == 0 {
+			log.Fatal("[ERROR] No peers left to connect")
+		}
+
 		return
 	}
 
