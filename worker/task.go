@@ -72,6 +72,23 @@ func (state *TaskProgress) ReadMessage() error {
 	return nil
 }
 
+// hasBacklogSpace determines whether the worker can accumulate more requests
+// for given task
+func (state *TaskProgress) hasBacklogSpace(piece *TaskItem) bool {
+	return state.Backlog < MaxBacklog && state.Requested < piece.Length
+}
+
+// blockSize returns either a constant size of a block to request or (in case
+// of the last block) the calculated last block size
+func (state *TaskProgress) blockSize(piece *TaskItem) int {
+	blockSize := piece.Length - state.Requested
+	if blockSize < MaxBlockSize {
+		return blockSize
+	}
+
+	return MaxBlockSize
+}
+
 // checkIntegrity compares sha1 hash sums of a piece and downloaded content
 func (piece *TaskItem) checkIntegrity(content []byte) error {
 	hash := sha1.Sum(content)

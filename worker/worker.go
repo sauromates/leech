@@ -28,14 +28,10 @@ type TorrentConnInfo struct {
 func Create(ti TorrentConnInfo, peer peers.Peer, queue chan *TaskItem, results chan *TaskResult) (*Worker, error) {
 	client, err := client.Create(peer, ti.InfoHash, ti.MyID)
 	if err != nil {
-		log.Printf("Could not handshake with %s (%s). Disconnecting\n", peer.IP, err)
 		return nil, err
 	}
 
-	log.Printf("Connected to peer %s\n", peer.String())
-
-	client.RequestUnchoke()
-	client.AnnounceInterest()
+	log.Printf("[INFO] Connected to peer %s\n", peer.String())
 
 	return &Worker{client, queue, results}, nil
 }
@@ -55,14 +51,14 @@ func (worker *Worker) Run() error {
 
 		content, err := worker.downloadPiece(piece)
 		if err != nil {
-			log.Printf("Download failed: %s", err)
+			log.Printf("[ERROR] Download failed: %s", err)
 			worker.queue <- piece
 
 			return err
 		}
 
 		if err := piece.checkIntegrity(content); err != nil {
-			log.Printf("Invalid piece: %s", err)
+			log.Printf("[ERROR] Invalid piece: %s", err)
 			worker.queue <- piece
 
 			continue
@@ -76,7 +72,7 @@ func (worker *Worker) Run() error {
 }
 
 func (worker *Worker) downloadPiece(piece *TaskItem) ([]byte, error) {
-	taskState := TaskProgress{
+	task := TaskProgress{
 		Index:   piece.Index,
 		Client:  worker.Peer,
 		Content: make([]byte, piece.Length),
@@ -87,28 +83,24 @@ func (worker *Worker) downloadPiece(piece *TaskItem) ([]byte, error) {
 	worker.Peer.Conn.SetDeadline(time.Now().Add(30 * time.Second))
 	defer worker.Peer.Conn.SetDeadline(time.Time{})
 
-	for taskState.Downloaded < piece.Length {
-		if !taskState.Client.IsChoked {
-			for taskState.Backlog < MaxBacklog && taskState.Requested < piece.Length {
-				blockSize := MaxBlockSize
-				currBlockSize := piece.Length - taskState.Requested
-				if currBlockSize < blockSize {
-					blockSize = currBlockSize
-				}
+	for task.Downloaded < piece.Length {
+		if !worker.Peer.IsChoked {
+			for task.hasBacklogSpace(piece) {
+				blockSize := task.blockSize(piece)
 
-				if err := worker.Peer.RequestPiece(piece.Index, taskState.Requested, blockSize); err != nil {
+				if err := worker.Peer.RequestPiece(piece.Index, task.Requested, blockSize); err != nil {
 					return nil, err
 				}
 
-				taskState.Backlog++
-				taskState.Requested += blockSize
+				task.Backlog++
+				task.Requested += blockSize
 			}
 		}
 
-		if err := taskState.ReadMessage(); err != nil {
+		if err := task.ReadMessage(); err != nil {
 			return nil, err
 		}
 	}
 
-	return taskState.Content, nil
+	return task.Content, nil
 }
