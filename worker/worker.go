@@ -1,53 +1,79 @@
 package worker
 
 import (
-	"bytes"
-	"crypto/sha1"
-	"fmt"
 	"log"
 	"time"
 
 	"github.com/sauromates/leech/client"
+	"github.com/sauromates/leech/internal/peers"
+	"github.com/sauromates/leech/internal/utils"
 )
 
 const (
 	// MaxBlockSize is the largest number of bytes a request can ask for (default is 2048 Kb (16384 bytes))
 	MaxBlockSize = 16384
 	// MaxBacklog is the number of unfulfilled requests a client can have in its pipeline
-	MaxBacklog = 50
+	MaxBacklog = 5
 )
 
+// Worker listens to tasks queue and processes each received task.
+// Peer field here is actually a connection here.
 type Worker struct {
-	Peer *client.Client
+	Peer    *client.Client
+	queue   chan *TaskItem
+	results chan *TaskResult
 }
 
-// Run starts listening to a task queue until it's empty or until a
-// download error occurs
-func (worker *Worker) Run(queue chan *TaskItem, results chan *TaskResult) error {
-	for piece := range queue {
+// TorrentConnInfo holds information about the torrent unique hash ID for
+// identification and current user ID for connections
+type TorrentConnInfo struct {
+	InfoHash utils.BTString
+	MyID     utils.BTString
+}
+
+// Create creates new connection for a peer and puts it into new worker instance
+func Create(ti TorrentConnInfo, peer peers.Peer, queue chan *TaskItem, results chan *TaskResult) (*Worker, error) {
+	client, err := client.Create(peer, ti.InfoHash, ti.MyID)
+	if err != nil {
+		log.Printf("Could not handshake with %s (%s). Disconnecting\n", peer.IP, err)
+		return nil, err
+	}
+
+	log.Printf("Connected to peer %s\n", peer.String())
+
+	client.RequestUnchoke()
+	client.AnnounceInterest()
+
+	return &Worker{client, queue, results}, nil
+}
+
+// Run starts listening to a task queue until it's empty or until a download error occurs
+func (worker *Worker) Run() error {
+	defer worker.Peer.Conn.Close()
+
+	for piece := range worker.queue {
 		if !worker.Peer.BitField.HasPiece(piece.Index) {
-			queue <- piece
+			worker.queue <- piece
 			continue
 		}
 
 		content, err := worker.downloadPiece(piece)
 		if err != nil {
 			log.Printf("Download failed: %s", err)
-			queue <- piece
+			worker.queue <- piece
 
 			return err
 		}
 
-		if err := verifyPiece(piece, content); err != nil {
-			log.Printf("Integrity check failed: %s", err)
-			queue <- piece
+		if err := piece.checkIntegrity(content); err != nil {
+			log.Printf("Invalid piece: %s", err)
+			worker.queue <- piece
 
 			continue
 		}
 
 		worker.Peer.ConfirmHavePiece(piece.Index)
-
-		results <- &TaskResult{piece.Index, content}
+		worker.results <- &TaskResult{piece.Index, content}
 	}
 
 	return nil
@@ -84,7 +110,6 @@ func (worker *Worker) downloadPiece(piece *TaskItem) ([]byte, error) {
 		}
 
 		if err := taskState.ReadMessage(); err != nil {
-			log.Fatal("here")
 			return nil, err
 		}
 	}
