@@ -1,7 +1,9 @@
 package torrent
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -11,7 +13,14 @@ import (
 	"github.com/sauromates/leech/internal/peers"
 	"github.com/sauromates/leech/internal/utils"
 	"github.com/sauromates/leech/worker"
+	"github.com/schollz/progressbar/v3"
 )
+
+type FileWithBounds struct {
+	name  string
+	begin int
+	end   int
+}
 
 type MultiFileTorrent struct {
 	BaseTorrent
@@ -46,12 +55,11 @@ func (torrent *MultiFileTorrent) Download(path string) ([]byte, error) {
 		pool <- &peer
 	}
 
-	done := 0
+	done, bar := 0, progressbar.DefaultBytes(int64(torrent.TotalSizeBytes()), "downloading")
 	for done < len(torrent.PieceHashes) {
 		select {
 		case piece := <-results:
-			if err := torrent.Write(path, piece); err != nil {
-				log.Fatal(err)
+			if err := torrent.Write(path, piece, bar); err != nil {
 				return nil, err
 			}
 
@@ -77,26 +85,29 @@ func (torrent *MultiFileTorrent) Download(path string) ([]byte, error) {
 	close(results)
 	close(pool)
 
+	bar.Finish()
+
 	return []byte{}, nil
 }
 
 // Write populates a file with downloaded piece. BasePath is a directory where
-// any downloading files should be stored.
-func (torrent *MultiFileTorrent) Write(basePath string, piece *worker.TaskResult) error {
-	filename, err := torrent.WhichFile(piece.Index)
+// any downloaded files should be stored.
+func (torrent *MultiFileTorrent) Write(basePath string, piece *worker.TaskResult, tracker io.Writer) error {
+	fileBounds, err := torrent.WhichFile(piece.Index)
 	if err != nil {
 		return err
 	}
 
-	filepath := filepath.Join(basePath, filename)
-	file, err := os.OpenFile(filepath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, os.ModePerm)
+	filepath := filepath.Join(basePath, fileBounds.name)
+	file, err := os.OpenFile(filepath, os.O_CREATE|os.O_WRONLY, os.ModePerm)
 	if err != nil {
 		return err
 	}
 
 	defer file.Close()
 
-	if _, err := file.Write(piece.Content); err != nil {
+	writer := io.NewOffsetWriter(file, int64(fileBounds.begin))
+	if _, err := io.Copy(io.MultiWriter(writer, tracker), bytes.NewReader(piece.Content)); err != nil {
 		return err
 	}
 
@@ -104,37 +115,33 @@ func (torrent *MultiFileTorrent) Write(basePath string, piece *worker.TaskResult
 }
 
 // WhichFile determines which file a piece belongs to based on its index
-func (torrent *MultiFileTorrent) WhichFile(index int) (string, error) {
-	type bound struct {
-		name  string
-		begin int
-		end   int
-	}
-
+func (torrent *MultiFileTorrent) WhichFile(index int) (FileWithBounds, error) {
 	// Assemble a slice of file boundaries
-	bounds := make([]bound, len(torrent.Paths))
+	bounds := make([]FileWithBounds, len(torrent.Paths))
+	cumulativeOffset := 0
 	for i, file := range torrent.Paths {
-		var begin int
-		if i == 0 {
-			begin = 0
-		} else {
-			begin = bounds[i-1].end + 1
+		bounds[i] = FileWithBounds{
+			name:  filepath.Join(file.Path...),
+			begin: cumulativeOffset,
+			end:   cumulativeOffset + file.Length + 1,
 		}
 
-		filename := filepath.Join(file.Path...)
-
-		bounds[i] = bound{filename, begin, begin + file.Length}
+		cumulativeOffset += file.Length
 	}
 
-	pieceBegin, _ := torrent.PieceBounds(index)
+	pieceBegin, pieceEnd := torrent.PieceBounds(index)
 	// Quickly search for the right interval for received piece index
 	left, right := 0, len(bounds)-1
 	for left <= right {
 		mid := left + (right-left)/2
 		file := bounds[mid]
 
-		if pieceBegin >= file.begin && pieceBegin <= file.end {
-			return file.name, nil
+		if pieceBegin <= file.end && pieceEnd >= file.begin {
+			return FileWithBounds{
+				name:  file.name,
+				begin: max(0, pieceBegin-file.begin),
+				end:   min(file.end-file.begin+1, pieceEnd-file.begin),
+			}, nil
 		} else if pieceBegin < file.begin {
 			right = mid - 1
 		} else {
@@ -142,5 +149,5 @@ func (torrent *MultiFileTorrent) WhichFile(index int) (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("failed to associate piece %d with a file", index)
+	return FileWithBounds{}, fmt.Errorf("failed to associate piece %d with a file", index)
 }
