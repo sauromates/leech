@@ -56,7 +56,7 @@ func Read(r io.Reader, expectedHash utils.BTString) (*Handshake, error) {
 
 // Serialize serializes handshake into a slice of bytes
 func (msg *Handshake) Serialize() []byte {
-	buf := make([]byte, len(msg.PSTR)*49)
+	buf := make([]byte, len(msg.PSTR)+49)
 	buf[0] = byte(len(msg.PSTR))
 
 	curr := 1
