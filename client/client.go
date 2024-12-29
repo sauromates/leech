@@ -64,10 +64,10 @@ func (client *Client) RequestPiece(index, begin, length int) error {
 
 // Unchoke asks a peer to unchoke current client
 func (client *Client) Unchoke() error {
-	return client.Write(message.Create(message.Unchoke))
+	return client.Write(message.CreateEmpty(message.Unchoke))
 }
 
 // AnnounceInterest notifies peer about client being ready to download pieces
 func (client *Client) AnnounceInterest() error {
-	return client.Write(message.Create(message.Interested))
+	return client.Write(message.CreateEmpty(message.Interested))
 }
