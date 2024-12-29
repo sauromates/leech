@@ -1,15 +1,13 @@
 package torrent
 
 import (
-	"log"
-
 	"github.com/sauromates/leech/internal/peers"
 	"github.com/sauromates/leech/internal/utils"
 	"github.com/sauromates/leech/worker"
 )
 
 // maxConnections defines a limit of peer connections
-const maxConnections int = 5
+const maxConnections int = 20
 
 type Torrent interface {
 	// TotalSizeBytes calculates total size of downloadable content for torrent
@@ -64,26 +62,15 @@ func (torrent *BaseTorrent) PieceSize(index int) int {
 // runs it until the queue is empty or until an error occurs.
 func (torrent *BaseTorrent) startWorker(
 	peer peers.Peer,
-	queue chan *worker.TaskItem,
+	queue chan *worker.Task,
 	results chan *worker.TaskResult,
 	peers chan *peers.Peer,
 ) {
-	info := worker.TorrentConnInfo{
-		InfoHash: torrent.InfoHash,
-		MyID:     torrent.PeerID,
-	}
+	w := worker.Create(torrent.InfoHash, torrent.PeerID)
 
-	worker, err := worker.Create(info, peer, queue, results)
-	if err != nil {
-		log.Printf("[ERROR] Connection with %s failed. Reason: %s", peer.String(), err)
-		if len(peers) == 0 {
-			log.Fatal("[ERROR] No peers left to connect")
+	if err := w.Run(peer, queue, results); err != nil {
+		if err != worker.ErrConn {
+			peers <- &peer
 		}
-
-		return
-	}
-
-	if err := worker.Run(); err != nil {
-		peers <- &peer
 	}
 }

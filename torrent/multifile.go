@@ -18,6 +18,7 @@ type MultiFileTorrent struct {
 	Paths []utils.FileInfo
 }
 
+// TotalSizeBytes sums length of all files in a multi file torrent.
 func (torrent MultiFileTorrent) TotalSizeBytes() int {
 	size := 0
 	for _, file := range torrent.Paths {
@@ -27,13 +28,18 @@ func (torrent MultiFileTorrent) TotalSizeBytes() int {
 	return size
 }
 
+// Download runs workers asynchronously after preparing necessary infrastructure
+// for them: assembles tasks and results queues, pushes peers into a pool of connections, etc.
 func (torrent *MultiFileTorrent) Download(path string) ([]byte, error) {
-	queue := make(chan *worker.TaskItem, len(torrent.PieceHashes))
+	queue := make(chan *worker.Task, len(torrent.PieceHashes))
 	results := make(chan *worker.TaskResult)
 	pool := make(chan *peers.Peer, len(torrent.Peers))
 
-	for i, hash := range torrent.PieceHashes {
-		queue <- &worker.TaskItem{Index: i, Hash: hash, Length: torrent.PieceSize(i)}
+	for index, hash := range torrent.PieceHashes {
+		pieceLength := torrent.PieceSize(index)
+		piece := worker.Task{Index: index, Hash: hash, Length: pieceLength}
+
+		queue <- &piece
 	}
 
 	for _, peer := range torrent.Peers {
@@ -45,20 +51,25 @@ func (torrent *MultiFileTorrent) Download(path string) ([]byte, error) {
 		select {
 		case piece := <-results:
 			if err := torrent.Write(path, piece); err != nil {
+				log.Fatal(err)
 				return nil, err
 			}
 
 			done++
+			percent := float64(done) / float64(len(torrent.PieceHashes)) * 100
+			log.Printf("[INFO] Downloaded piece %d, %0.2f%% finished", piece.Index, percent)
 		case peer := <-pool:
+			log.Printf("[INFO] Received peer %s", peer.String())
+
 			numWorkers := runtime.NumGoroutine() - 1
-			if numWorkers <= maxConnections {
+			if numWorkers < maxConnections {
+				log.Printf("[INFO] Connecting to %s", peer.String())
 				go torrent.startWorker(*peer, queue, results, pool)
 			} else {
-				time.Sleep(1 * time.Second)
+				log.Printf("[INFO] Too many connections, will retry %s later", peer.String())
+				time.Sleep(time.Second * 3)
 				pool <- peer
 			}
-
-			log.Printf("[INFO] Connecting to %s", peer.String())
 		}
 	}
 
