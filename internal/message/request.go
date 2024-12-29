@@ -13,7 +13,7 @@ func CreateRequest(index, begin, length int) *Message {
 	binary.BigEndian.PutUint32(payload[4:8], uint32(begin))
 	binary.BigEndian.PutUint32(payload[8:12], uint32(length))
 
-	return &Message{Request, payload}
+	return &Message{ID: Request, Payload: payload}
 }
 
 // ParsePiece verifies incoming message and returns length of downloaded piece

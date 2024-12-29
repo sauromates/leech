@@ -10,7 +10,7 @@ func CreateHave(index int) *Message {
 	payload := make([]byte, 4)
 	binary.BigEndian.PutUint32(payload, uint32(index))
 
-	return &Message{Have, payload}
+	return &Message{ID: Have, Payload: payload}
 }
 
 // ParseHave transforms message `HAVE` to an integer value

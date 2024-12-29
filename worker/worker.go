@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"errors"
 	"log"
 	"time"
 
@@ -9,86 +10,89 @@ import (
 	"github.com/sauromates/leech/internal/utils"
 )
 
-// Worker listens to tasks queue and processes each received task.
-// Peer field here is actually a connection here.
-type Worker struct {
-	Peer    *client.Client
-	queue   chan *TaskItem
-	results chan *TaskResult
-}
+var ErrConn error = errors.New("failed to connect to a peer")
 
-// TorrentConnInfo holds information about the torrent unique hash ID for
-// identification and current user ID for connections
-type TorrentConnInfo struct {
+// Worker listens to tasks queue and processes each received task.
+// Peer field is actually a connection here.
+type Worker struct {
 	InfoHash utils.BTString
-	MyID     utils.BTString
+	ClientID utils.BTString
 }
 
 // Create creates new connection for a peer and puts it into new worker instance
-func Create(ti TorrentConnInfo, peer peers.Peer, queue chan *TaskItem, results chan *TaskResult) (*Worker, error) {
-	client, err := client.Create(peer, ti.InfoHash, ti.MyID)
+func Create(infoHash, peerID utils.BTString) *Worker {
+	return &Worker{infoHash, peerID}
+}
+
+func (worker *Worker) Connect(peer peers.Peer) (*client.Client, error) {
+	client, err := client.Create(peer, worker.InfoHash, worker.ClientID)
 	if err != nil {
 		return nil, err
 	}
 
-	log.Printf("[INFO] Connected to peer %s\n", peer.String())
+	log.Printf("[INFO] Connected to peer %s\n", client.Conn.RemoteAddr())
 
-	return &Worker{client, queue, results}, nil
+	return client, nil
 }
 
 // Run starts listening to a task queue until it's empty or until a download error occurs
-func (worker *Worker) Run() error {
-	defer worker.Peer.Conn.Close()
+func (worker *Worker) Run(peer peers.Peer, queue chan *Task, results chan *TaskResult) error {
+	client, err := worker.Connect(peer)
+	if err != nil {
+		return ErrConn
+	}
 
-	worker.Peer.Unchoke()
-	worker.Peer.AnnounceInterest()
+	defer client.Conn.Close()
 
-	for piece := range worker.queue {
-		if !worker.Peer.BitField.HasPiece(piece.Index) {
-			worker.queue <- piece
+	client.Unchoke()
+	client.AnnounceInterest()
+
+	for piece := range queue {
+		if !client.BitField.HasPiece(piece.Index) {
+			queue <- piece
 			continue
 		}
 
-		content, err := worker.downloadPiece(piece)
+		content, err := worker.downloadPiece(client, piece)
 		if err != nil {
 			log.Printf("[ERROR] Download failed: %s", err)
-			worker.queue <- piece
+			queue <- piece
 
 			return err
 		}
 
 		if err := piece.verifyHashSum(content); err != nil {
 			log.Printf("[ERROR] Invalid piece: %s", err)
-			worker.queue <- piece
+			queue <- piece
 
 			continue
 		}
 
-		worker.Peer.ConfirmHavePiece(piece.Index)
-		worker.results <- &TaskResult{piece.Index, content}
+		client.ConfirmHavePiece(piece.Index)
+		results <- &TaskResult{piece.Index, content}
 	}
 
 	return nil
 }
 
-func (worker *Worker) downloadPiece(piece *TaskItem) ([]byte, error) {
+func (worker *Worker) downloadPiece(client *client.Client, piece *Task) ([]byte, error) {
 	task := TaskProgress{
 		Index:   piece.Index,
-		Client:  worker.Peer,
+		Client:  client,
 		Content: make([]byte, piece.Length),
 	}
 
 	// Setting a deadline helps get unresponsive peers unstuck.
 	// 30 seconds is more than enough time to download a 262 KB piece
-	worker.Peer.Conn.SetDeadline(time.Now().Add(30 * time.Second))
-	defer worker.Peer.Conn.SetDeadline(time.Time{})
+	client.Conn.SetDeadline(time.Now().Add(30 * time.Second))
+	defer client.Conn.SetDeadline(time.Time{})
 
 	for task.Downloaded < piece.Length {
-		if !worker.Peer.IsChoked {
-			for task.hasBacklogSpace(piece) {
-				blockSize := task.blockSize(piece)
+		if !task.Client.IsChoked {
+			for task.hasBacklogSpace(piece.Length) {
+				blockSize := task.blockSize(piece.Length)
 
-				if err := worker.Peer.RequestPiece(piece.Index, task.Requested, blockSize); err != nil {
+				if err := client.RequestPiece(piece.Index, task.Requested, blockSize); err != nil {
 					return nil, err
 				}
 

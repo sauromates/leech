@@ -2,31 +2,36 @@ package message
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 )
 
 const (
-	Choke         BTMsgID = 0 // Chokes the receiver
-	Unchoke       BTMsgID = 1 // Unchokes the receiver
-	Interested    BTMsgID = 2 // Expresses interest in receiving data
-	NotInterested BTMsgID = 3 // Expresses disinterest in receiving data
-	Have          BTMsgID = 4 // Alerts the receiver that the sender has downloaded a piece
-	BitField      BTMsgID = 5 // Encodes which pieces the sender has downloaded
-	Request       BTMsgID = 6 // Requests a block of data from the receiver
-	Piece         BTMsgID = 7 // Delivers a block of data to fulfill a request
-	Cancel        BTMsgID = 8 // Cancels a request
+	Choke         uint8 = 0 // Chokes the receiver
+	Unchoke       uint8 = 1 // Unchokes the receiver
+	Interested    uint8 = 2 // Expresses interest in receiving data
+	NotInterested uint8 = 3 // Expresses disinterest in receiving data
+	Have          uint8 = 4 // Alerts the receiver that the sender has downloaded a piece
+	BitField      uint8 = 5 // Encodes which pieces the sender has downloaded
+	Request       uint8 = 6 // Requests a block of data from the receiver
+	Piece         uint8 = 7 // Delivers a block of data to fulfill a request
+	Cancel        uint8 = 8 // Cancels a request
 )
 
-type BTMsgID uint8
+var (
+	ErrMessageEmpty   error = errors.New("failed to read empty message")
+	ErrInvalidPayload error = errors.New("failed to read message payload")
+)
 
+// Message represents request to a peer
 type Message struct {
-	ID      BTMsgID
+	ID      uint8
 	Payload []byte
 }
 
-// Create creates new message with given code as ID
-func Create(code BTMsgID) *Message {
+// CreateEmpty creates new message with given code as ID
+func CreateEmpty(code uint8) *Message {
 	return &Message{ID: code}
 }
 
@@ -35,7 +40,7 @@ func Read(r io.Reader) (*Message, error) {
 	lenBuf := make([]byte, 4)
 	if _, err := io.ReadFull(r, lenBuf); err != nil {
 		if err == io.EOF {
-			return nil, fmt.Errorf("received empty message")
+			return nil, ErrMessageEmpty
 		}
 		return nil, err
 	}
@@ -47,10 +52,10 @@ func Read(r io.Reader) (*Message, error) {
 
 	payload := make([]byte, length)
 	if _, err := io.ReadFull(r, payload); err != nil {
-		return nil, err
+		return nil, ErrInvalidPayload
 	}
 
-	return &Message{BTMsgID(payload[0]), payload[1:]}, nil
+	return &Message{uint8(payload[0]), payload[1:]}, nil
 }
 
 // Serialize serializes a message into a buffer of the form <length><message ID><payload>.
