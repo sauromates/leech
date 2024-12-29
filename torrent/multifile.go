@@ -138,7 +138,7 @@ func (torrent *MultiFileTorrent) WhichFile(index int) (string, error) {
 		} else if pieceBegin < file.begin {
 			right = mid - 1
 		} else {
-			right = mid + 1
+			left = mid + 1
 		}
 	}
 
