@@ -20,24 +20,25 @@ const (
 	MaxBacklog int = 5
 )
 
-// Task represents downloadable piece
-type Task struct {
+// Piece represents downloadable piece
+type Piece struct {
 	Index  int
 	Hash   utils.BTString
 	Length int
 }
 
-// TaskResult holds contents of downloaded piece
+// PieceContent holds contents of downloaded piece
 //
 // It also implements [io.Reader] and [io.ReaderAt] to allow results usage
 // in I/O operations
-type TaskResult struct {
+type PieceContent struct {
 	Index   int
 	Content []byte
 }
 
-// TaskProgress keeps track of piece download process
-type TaskProgress struct {
+// Pipeline keeps track of piece download process while keeping backlog
+// of pending requests and current download state
+type Pipeline struct {
 	Index      int
 	Client     *client.Client
 	Content    []byte
@@ -47,8 +48,8 @@ type TaskProgress struct {
 }
 
 // ReadMessage processes responses from the connected peer
-func (state *TaskProgress) ReadMessage() error {
-	msg, err := state.Client.Read() // This call blocks
+func (p *Pipeline) ReadMessage() error {
+	msg, err := p.Client.Read() // This call blocks
 	if err != nil {
 		return err
 	}
@@ -59,24 +60,24 @@ func (state *TaskProgress) ReadMessage() error {
 
 	switch msg.ID {
 	case message.Unchoke:
-		state.Client.IsChoked = false
+		p.Client.IsChoked = false
 	case message.Choke:
-		state.Client.IsChoked = true
+		p.Client.IsChoked = true
 	case message.Have:
 		index, err := msg.ParseHave()
 		if err != nil {
 			return err
 		}
 
-		state.Client.BitField.SetPiece(index)
+		p.Client.BitField.SetPiece(index)
 	case message.Piece:
-		downloaded, err := msg.ParsePiece(state.Index, state.Content)
+		downloaded, err := msg.ParsePiece(p.Index, p.Content)
 		if err != nil {
 			return err
 		}
 
-		state.Downloaded += downloaded
-		state.Backlog--
+		p.Downloaded += downloaded
+		p.Backlog--
 	}
 
 	return nil
@@ -84,14 +85,14 @@ func (state *TaskProgress) ReadMessage() error {
 
 // hasBacklogSpace determines whether the worker can accumulate more requests
 // for given task
-func (state *TaskProgress) hasBacklogSpace(pieceLength int) bool {
-	return state.Backlog < MaxBacklog && state.Requested < pieceLength
+func (p *Pipeline) hasBacklogSpace(pieceLength int) bool {
+	return p.Backlog < MaxBacklog && p.Requested < pieceLength
 }
 
 // blockSize returns either a constant size of a block to request or (in case
 // of the last block) the calculated last block size
-func (state *TaskProgress) blockSize(pieceLength int) int {
-	blockSize := pieceLength - state.Requested
+func (p *Pipeline) blockSize(pieceLength int) int {
+	blockSize := pieceLength - p.Requested
 	if blockSize < MaxBlockSize {
 		return blockSize
 	}
@@ -100,10 +101,10 @@ func (state *TaskProgress) blockSize(pieceLength int) int {
 }
 
 // verifyHashSum compares sha1 hash sums of a piece and downloaded content
-func (piece *Task) verifyHashSum(content []byte) error {
+func (p *Piece) verifyHashSum(content []byte) error {
 	hash := sha1.Sum(content)
-	if !bytes.Equal(hash[:], piece.Hash[:]) {
-		return fmt.Errorf("piece %d failed integrity check", piece.Index)
+	if !bytes.Equal(hash[:], p.Hash[:]) {
+		return fmt.Errorf("piece %d failed integrity check", p.Index)
 	}
 
 	return nil
@@ -111,16 +112,16 @@ func (piece *Task) verifyHashSum(content []byte) error {
 
 // reader returns new [*bytes.Reader] instance to be used later for [io.Reader]
 // and [io.ReaderAt] implementations
-func (piece *TaskResult) reader() *bytes.Reader {
-	return bytes.NewReader(piece.Content)
+func (c *PieceContent) reader() *bytes.Reader {
+	return bytes.NewReader(c.Content)
 }
 
 // Read calls underlying [*bytes.Reader] to read piece contents
-func (piece *TaskResult) Read(b []byte) (n int, err error) {
-	return piece.reader().Read(b)
+func (c *PieceContent) Read(b []byte) (n int, err error) {
+	return c.reader().Read(b)
 }
 
 // ReadAt calls underlying [*bytes.Reader] to read piece contents from offset
-func (piece *TaskResult) ReadAt(b []byte, off int64) (n int, err error) {
-	return piece.reader().ReadAt(b, off)
+func (c *PieceContent) ReadAt(b []byte, off int64) (n int, err error) {
+	return c.reader().ReadAt(b, off)
 }

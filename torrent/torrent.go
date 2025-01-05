@@ -62,13 +62,13 @@ func CreateFromTorrentFile(tf torrentfile.TorrentFile) (*Torrent, error) {
 func (torrent *Torrent) Download(dir string) error {
 	torrent.DownloadDir = dir
 
-	queue := make(chan *worker.Task, len(torrent.PieceHashes))
-	results := make(chan *worker.TaskResult)
+	queue := make(chan *worker.Piece, len(torrent.PieceHashes))
+	results := make(chan *worker.PieceContent)
 	pool := make(chan *peers.Peer, len(torrent.Peers))
 
 	for index, hash := range torrent.PieceHashes {
 		pieceLength := torrent.pieceSize(index)
-		piece := worker.Task{Index: index, Hash: hash, Length: pieceLength}
+		piece := worker.Piece{Index: index, Hash: hash, Length: pieceLength}
 
 		queue <- &piece
 	}
@@ -149,7 +149,7 @@ func (torrent *Torrent) pieceSize(index int) int {
 // Base scenario is writing to a single file, but pieces may overlap files,
 // in which case we will split piece by relative offset and length and write
 // its parts to multiple associated files
-func (torrent *Torrent) write(piece *worker.TaskResult, tracker io.Writer) (n int, err error) {
+func (torrent *Torrent) write(piece *worker.PieceContent, tracker io.Writer) (n int, err error) {
 	files, err := torrent.whichFiles(piece.Index)
 	if err != nil {
 		return n, err
@@ -224,8 +224,8 @@ func (torrent *Torrent) whichFiles(piece int) (map[string]utils.FileMap, error) 
 // runs it until the queue is empty or until an error occurs.
 func (torrent *Torrent) startWorker(
 	peer peers.Peer,
-	queue chan *worker.Task,
-	results chan *worker.TaskResult,
+	queue chan *worker.Piece,
+	results chan *worker.PieceContent,
 	peers chan *peers.Peer,
 ) {
 	w := worker.Create(peer, torrent.InfoHash, torrent.PeerID)
