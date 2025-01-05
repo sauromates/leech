@@ -57,10 +57,10 @@ func TestWhichFiles(t *testing.T) {
 			}),
 			expectedFiles: []map[string]utils.FileMap{
 				{
-					"test1": {FileOffset: 0, PieceStart: 0, PieceEnd: 50},
+					"test1": {FileName: "test1", FileOffset: 0, PieceStart: 0, PieceEnd: 50},
 				},
 				{
-					"test2": {FileOffset: 0, PieceStart: 0, PieceEnd: 50},
+					"test2": {FileName: "test2", FileOffset: 0, PieceStart: 0, PieceEnd: 50},
 				},
 			},
 			shouldFail: false,
@@ -73,14 +73,14 @@ func TestWhichFiles(t *testing.T) {
 			}),
 			expectedFiles: []map[string]utils.FileMap{
 				{
-					"test0": {FileOffset: 0, PieceStart: 0, PieceEnd: 40},
+					"test0": {FileName: "test0", FileOffset: 0, PieceStart: 0, PieceEnd: 40},
 				},
 				{
-					"test0": {FileOffset: 40, PieceStart: 0, PieceEnd: 10},
-					"test1": {FileOffset: 0, PieceStart: 10, PieceEnd: 40},
+					"test0": {FileName: "test0", FileOffset: 40, PieceStart: 0, PieceEnd: 10},
+					"test1": {FileName: "test1", FileOffset: 0, PieceStart: 10, PieceEnd: 40},
 				},
 				{
-					"test2": {FileOffset: 0, PieceStart: 0, PieceEnd: 20},
+					"test2": {FileName: "test2", FileOffset: 0, PieceStart: 0, PieceEnd: 20},
 				},
 			},
 			shouldFail: false,
@@ -94,13 +94,13 @@ func TestWhichFiles(t *testing.T) {
 			}),
 			expectedFiles: []map[string]utils.FileMap{
 				{
-					"test0": {FileOffset: 0, PieceStart: 0, PieceEnd: 5},
-					"test1": {FileOffset: 0, PieceStart: 5, PieceEnd: 10},
-					"test2": {FileOffset: 0, PieceStart: 10, PieceEnd: 40},
-					"test3": {FileOffset: 0, PieceStart: 40, PieceEnd: 60},
+					"test0": {FileName: "test0", FileOffset: 0, PieceStart: 0, PieceEnd: 5},
+					"test1": {FileName: "test1", FileOffset: 0, PieceStart: 5, PieceEnd: 10},
+					"test2": {FileName: "test2", FileOffset: 0, PieceStart: 10, PieceEnd: 40},
+					"test3": {FileName: "test3", FileOffset: 0, PieceStart: 40, PieceEnd: 60},
 				},
 				{
-					"test3": {FileOffset: 20, PieceStart: 0, PieceEnd: 40},
+					"test3": {FileName: "test3", FileOffset: 20, PieceStart: 0, PieceEnd: 40},
 				},
 			},
 			shouldFail: false,
@@ -191,7 +191,7 @@ func TestWrite(t *testing.T) {
 	for name, tc := range tt {
 		fileSizes := make(map[string]int64, 3)
 		for _, expectation := range tc.pieces {
-			_, err := tc.torrent.Write("", expectation.piece, nil)
+			_, err := tc.torrent.Write(expectation.piece, nil)
 			if tc.shouldFail {
 				assert.NotNil(t, err)
 			} else {

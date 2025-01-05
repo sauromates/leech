@@ -1,11 +1,9 @@
 package torrent
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"log"
-	"os"
 	"path/filepath"
 	"runtime"
 	"time"
@@ -124,41 +122,30 @@ func (torrent *Torrent) Download(dir string) error {
 func (torrent *Torrent) Write(piece *worker.TaskResult, tracker io.Writer) (n int, err error) {
 	files, err := torrent.WhichFiles(piece.Index)
 	if err != nil {
-		return 0, err
+		return n, err
 	}
 
-	total := 0
+	for _, file := range files {
+		file.Open()
 
-	for path, chunk := range files {
-		filepath := filepath.Join(basePath, path)
-		file, err := os.OpenFile(filepath, os.O_CREATE|os.O_WRONLY, 0644)
-		if err != nil {
-			return 0, err
-		}
-
-		defer file.Close()
-
-		length := chunk.PieceEnd - chunk.PieceStart
-		content := make([]byte, length)
-		copy(content, piece.Content[chunk.PieceStart:chunk.PieceEnd])
-
-		src := bytes.NewReader(content)
-		var dst io.Writer = io.NewOffsetWriter(file, chunk.FileOffset)
+		src := io.NewSectionReader(piece, file.PieceStart, file.PieceEnd)
+		var dst io.Writer = file
 		if tracker != nil {
 			dst = io.MultiWriter(dst, tracker)
 		}
 
-		copied, err := io.Copy(dst, src)
+		written, err := io.Copy(dst, src)
 		if err != nil {
-			return 0, err
+			file.Close()
+			return int(n), err
 		}
 
 		file.Close()
 
-		total += int(copied)
+		n += int(written)
 	}
 
-	return total, nil
+	return n, err
 }
 
 // WhichFiles determines which files the piece belongs to by an intersection
@@ -178,8 +165,8 @@ func (torrent *Torrent) WhichFiles(piece int) (map[string]utils.FileMap, error) 
 			files[file.Path] = utils.FileMap{
 				FileName:   filepath.Join(torrent.DownloadDir, file.Path),
 				FileOffset: int64(intersectOffset - file.Offset),
-				PieceStart: relativeOffset,
-				PieceEnd:   relativeOffset + relativeLength,
+				PieceStart: int64(relativeOffset),
+				PieceEnd:   int64(relativeOffset + relativeLength),
 			}
 		}
 	}
