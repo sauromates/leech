@@ -123,7 +123,7 @@ func TestWhichFiles(t *testing.T) {
 
 func TestWrite(t *testing.T) {
 	type expectation struct {
-		piece *worker.TaskResult
+		piece *worker.PieceContent
 		files []utils.PathInfo
 	}
 	type testCase struct {
@@ -141,13 +141,13 @@ func TestWrite(t *testing.T) {
 			}),
 			pieces: []expectation{
 				{
-					piece: &worker.TaskResult{Index: 0, Content: make([]byte, 50)},
+					piece: &worker.PieceContent{Index: 0, Content: make([]byte, 50)},
 					files: []utils.PathInfo{
 						{Path: "test0", Offset: 0, Length: 50},
 					},
 				},
 				{
-					piece: &worker.TaskResult{Index: 1, Content: make([]byte, 50)},
+					piece: &worker.PieceContent{Index: 1, Content: make([]byte, 50)},
 					files: []utils.PathInfo{
 						{Path: "test1", Offset: 0, Length: 50},
 					},
@@ -164,20 +164,20 @@ func TestWrite(t *testing.T) {
 			}),
 			pieces: []expectation{
 				{
-					piece: &worker.TaskResult{Index: 0, Content: make([]byte, 40)},
+					piece: &worker.PieceContent{Index: 0, Content: make([]byte, 40)},
 					files: []utils.PathInfo{
 						{Path: "test0", Offset: 0, Length: 40},
 					},
 				},
 				{
-					piece: &worker.TaskResult{Index: 1, Content: make([]byte, 40)},
+					piece: &worker.PieceContent{Index: 1, Content: make([]byte, 40)},
 					files: []utils.PathInfo{
 						{Path: "test0", Offset: 40, Length: 50},
 						{Path: "test1", Offset: 0, Length: 30},
 					},
 				},
 				{
-					piece: &worker.TaskResult{Index: 2, Content: make([]byte, 20)},
+					piece: &worker.PieceContent{Index: 2, Content: make([]byte, 20)},
 					files: []utils.PathInfo{
 						{Path: "test2", Offset: 0, Length: 20},
 					},

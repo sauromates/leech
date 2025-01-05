@@ -13,50 +13,51 @@ import (
 // Returned upon rejected or timed out connection with a peer
 var ErrConn error = errors.New("failed to connect to a peer")
 
-// Worker listens to tasks queue and processes each received task.
-// Peer field is actually a connection here.
+// Worker holds info needed for connections with peers and downloading pieces
 type Worker struct {
-	Peer     peers.Peer
-	InfoHash utils.BTString
-	ClientID utils.BTString
+	peer     peers.Peer
+	client   *client.Client
+	infoHash utils.BTString
+	clientID utils.BTString
 }
 
 // Create creates new connection for a peer and puts it into new worker instance
 func Create(peer peers.Peer, infoHash, peerID utils.BTString) *Worker {
-	return &Worker{peer, infoHash, peerID}
+	return &Worker{peer, nil, infoHash, peerID}
 }
 
-// Connect opens new TCP connection with given peer
-func (worker *Worker) Connect() (*client.Client, error) {
-	client, err := client.Create(worker.Peer, worker.InfoHash, worker.ClientID)
+// Connect opens new TCP connection with a peer
+func (w *Worker) Connect() error {
+	client, err := client.Create(w.peer, w.infoHash, w.clientID)
 	if err != nil {
-		return nil, ErrConn
+		return ErrConn
 	}
 
 	log.Printf("[INFO] Connected to peer %s\n", client.Conn.RemoteAddr())
 
-	return client, nil
+	w.client = client
+
+	return nil
 }
 
 // Run starts listening to a task queue until it's empty or until a download error occurs
-func (worker *Worker) Run(queue chan *Task, results chan *TaskResult) error {
-	client, err := worker.Connect()
-	if err != nil {
+func (w *Worker) Run(queue chan *Piece, results chan *PieceContent) error {
+	if err := w.Connect(); err != nil {
 		return err
 	}
 
-	defer client.Conn.Close()
+	defer w.client.Conn.Close()
 
-	client.Unchoke()
-	client.AnnounceInterest()
+	w.client.Unchoke()
+	w.client.AnnounceInterest()
 
 	for piece := range queue {
-		if !client.BitField.HasPiece(piece.Index) {
+		if !w.client.BitField.HasPiece(piece.Index) {
 			queue <- piece
 			continue
 		}
 
-		content, err := worker.downloadPiece(client, piece)
+		content, err := w.downloadPiece(piece)
 		if err != nil {
 			log.Printf("[ERROR] Download failed: %s", err)
 			queue <- piece
@@ -71,8 +72,8 @@ func (worker *Worker) Run(queue chan *Task, results chan *TaskResult) error {
 			continue
 		}
 
-		client.ConfirmHavePiece(piece.Index)
-		results <- &TaskResult{piece.Index, content}
+		w.client.ConfirmHavePiece(piece.Index)
+		results <- &PieceContent{piece.Index, content}
 	}
 
 	return nil
@@ -80,36 +81,36 @@ func (worker *Worker) Run(queue chan *Task, results chan *TaskResult) error {
 
 // downloadPiece attempts to process given task by requesting pieces in a
 // sequential pipeline
-func (worker *Worker) downloadPiece(client *client.Client, piece *Task) ([]byte, error) {
-	task := TaskProgress{
+func (w *Worker) downloadPiece(piece *Piece) ([]byte, error) {
+	pipeline := Pipeline{
 		Index:   piece.Index,
-		Client:  client,
+		Client:  w.client,
 		Content: make([]byte, piece.Length),
 	}
 
 	// Setting a deadline helps get unresponsive peers unstuck.
 	// 30 seconds is more than enough time to download a 262 KB piece
-	client.Conn.SetDeadline(time.Now().Add(30 * time.Second))
-	defer client.Conn.SetDeadline(time.Time{})
+	w.client.Conn.SetDeadline(time.Now().Add(30 * time.Second))
+	defer w.client.Conn.SetDeadline(time.Time{})
 
-	for task.Downloaded < piece.Length {
-		if !task.Client.IsChoked {
-			for task.hasBacklogSpace(piece.Length) {
-				blockSize := task.blockSize(piece.Length)
+	for pipeline.Downloaded < piece.Length {
+		if !pipeline.Client.IsChoked {
+			for pipeline.hasBacklogSpace(piece.Length) {
+				blockSize := pipeline.blockSize(piece.Length)
 
-				if err := client.RequestPiece(piece.Index, task.Requested, blockSize); err != nil {
+				if err := w.client.RequestPiece(piece.Index, pipeline.Requested, blockSize); err != nil {
 					return nil, err
 				}
 
-				task.Backlog++
-				task.Requested += blockSize
+				pipeline.Backlog++
+				pipeline.Requested += blockSize
 			}
 		}
 
-		if err := task.ReadMessage(); err != nil {
+		if err := pipeline.ReadMessage(); err != nil {
 			return nil, err
 		}
 	}
 
-	return task.Content, nil
+	return pipeline.Content, nil
 }
