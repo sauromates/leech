@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"text/template"
 
 	"github.com/sauromates/leech/torrentfile"
 )
@@ -20,17 +19,19 @@ func main() {
 		log.Fatal(err)
 	}
 
+	if err := printTorrentDetails(torrentfile); err != nil {
+		log.Fatal(err)
+	}
+
 	var downloadError error
 
 	if len(torrentfile.Paths) > 0 {
-		if err := printTorrentDetails(torrentfile); err != nil {
-			log.Fatal(err)
-		}
-
 		dir, err := createDownloadDir(torrentfile.Name)
 		if err != nil {
 			log.Fatal(err)
 		}
+
+		defer printResultDetails(dir)
 
 		downloadError = torrentfile.DownloadMultiple(dir)
 	} else {
@@ -75,23 +76,45 @@ func createDownloadDir(torrentName string) (string, error) {
 	return targetDir, nil
 }
 
-// printTorrentDetails parses torrent file and prints detailed information
-// about it using default `tmpl` file
+// printResultDetails outputs a list of downloaded files with their sizes
+func printResultDetails(dir string) error {
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("---\nDownload results\n%s:\n", dir)
+
+	for _, file := range files {
+		info, err := file.Info()
+		if err != nil {
+			return err
+		}
+
+		mbSize := float64(info.Size()) / (1024 * 1024)
+		fmt.Printf("    %s: %.2f MB\n", info.Name(), mbSize)
+	}
+
+	return nil
+}
+
+// printTorrentDetails outputs base info about the torrent
 func printTorrentDetails(tf torrentfile.TorrentFile) error {
-	decoded, err := tf.Parse()
+	info, err := tf.Parse()
 	if err != nil {
 		return err
 	}
 
-	funcs := template.FuncMap{
-		"toMB": func(size int) string {
-			return fmt.Sprintf("%.2f MB", float64(size/(1024*1024)))
-		},
-	}
-	template, err := template.New("torrent.go.tmpl").Funcs(funcs).ParseFiles("templates/torrent.go.tmpl")
-	if err != nil {
-		return err
+	filesCount := 1
+	if len(tf.Paths) > 0 {
+		filesCount = len(tf.Paths)
 	}
 
-	return template.Execute(os.Stdout, decoded)
+	fmt.Printf("Downloading %s\n---\nTotalSize: %.2f MB\nTotalFiles: %d\n",
+		tf.Name,
+		float64(info.TotalSizeBytes())/(1024*1024),
+		filesCount,
+	)
+
+	return nil
 }

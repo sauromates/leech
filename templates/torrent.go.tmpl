@@ -1,8 +1,0 @@
-Downloading "{{ .Name }}"
----
-Peers: {{ .Peers | len }}
-Total size: {{ .TotalSizeBytes | toMB }}
-Total files: {{ if eq (len .Paths) 0 }} 1 {{ else }} {{ .Paths | len }} {{ end }}
-{{ range .Paths }}
-{{ .Path }} ({{ .Length | toMB }})
-{{ end }}
