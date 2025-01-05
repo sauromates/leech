@@ -10,6 +10,10 @@ import (
 )
 
 func main() {
+	if err := configureLogs("leech.log"); err != nil {
+		log.Fatal(err)
+	}
+
 	inputPath := os.Args[1]
 	torrentfile, err := torrentfile.Open(inputPath)
 	if err != nil {
@@ -36,6 +40,21 @@ func main() {
 	if downloadError != nil {
 		log.Fatal(downloadError)
 	}
+}
+
+// configureLogs sets default log output to a file with given path
+func configureLogs(path string) error {
+	logFile, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+
+	defer logFile.Close()
+
+	log.SetOutput(logFile)
+	log.SetFlags(log.Lshortfile | log.LstdFlags)
+
+	return nil
 }
 
 // createDownloadDir creates a directory to store downloaded files
