@@ -31,6 +31,7 @@ type Torrent struct {
 	Name        string
 	Length      int
 	Files       []utils.PathInfo
+	DownloadDir string
 }
 
 func CreateFromTorrentFile(tf torrentfile.TorrentFile) (*Torrent, error) {
@@ -58,7 +59,9 @@ func CreateFromTorrentFile(tf torrentfile.TorrentFile) (*Torrent, error) {
 
 // Download runs workers asynchronously after preparing necessary infrastructure
 // for them: assembles tasks and results queues, pushes peers into a pool of connections, etc.
-func (torrent *Torrent) Download(path string) error {
+func (torrent *Torrent) Download(dir string) error {
+	torrent.DownloadDir = dir
+
 	queue := make(chan *worker.Task, len(torrent.PieceHashes))
 	results := make(chan *worker.TaskResult)
 	pool := make(chan *peers.Peer, len(torrent.Peers))
@@ -84,7 +87,7 @@ func (torrent *Torrent) Download(path string) error {
 				continue
 			}
 
-			if _, err := torrent.Write(path, piece, tracker); err != nil {
+			if _, err := torrent.Write(piece, tracker); err != nil {
 				return err
 			}
 
@@ -118,7 +121,7 @@ func (torrent *Torrent) Download(path string) error {
 // Base scenario is writing to a single file, but pieces may overlap files,
 // in which case we will split piece by relative offset and length and write
 // its parts to multiple associated files
-func (torrent *Torrent) Write(basePath string, piece *worker.TaskResult, tracker io.Writer) (int, error) {
+func (torrent *Torrent) Write(piece *worker.TaskResult, tracker io.Writer) (n int, err error) {
 	files, err := torrent.WhichFiles(piece.Index)
 	if err != nil {
 		return 0, err
@@ -173,6 +176,7 @@ func (torrent *Torrent) WhichFiles(piece int) (map[string]utils.FileMap, error) 
 			relativeLength := intersectLength - intersectOffset
 
 			files[file.Path] = utils.FileMap{
+				FileName:   filepath.Join(torrent.DownloadDir, file.Path),
 				FileOffset: int64(intersectOffset - file.Offset),
 				PieceStart: relativeOffset,
 				PieceEnd:   relativeOffset + relativeLength,
