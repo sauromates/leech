@@ -5,17 +5,23 @@ import (
 	"crypto/sha1"
 	"fmt"
 	"io"
+	"path/filepath"
 
 	"github.com/jackpal/bencode-go"
 	"github.com/sauromates/leech/internal/utils"
 )
 
+type bencodeFile struct {
+	Length int      `bencode:"length"`
+	Path   []string `bencode:"path"`
+}
+
 type bencodeInfo struct {
-	Pieces      string           `bencode:"pieces"`
-	PieceLength int              `bencode:"piece length"`
-	Length      int              `bencode:"length"`
-	Name        string           `bencode:"name"`
-	Files       []utils.FileInfo `bencode:"files"`
+	Pieces      string        `bencode:"pieces"`
+	PieceLength int           `bencode:"piece length"`
+	Length      int           `bencode:"length"`
+	Name        string        `bencode:"name"`
+	Files       []bencodeFile `bencode:"files"`
 }
 
 type singleFileBencodeInfo struct {
@@ -26,10 +32,10 @@ type singleFileBencodeInfo struct {
 }
 
 type multiFileBencodeInfo struct {
-	Pieces      string           `bencode:"pieces"`
-	PieceLength int              `bencode:"piece length"`
-	Name        string           `bencode:"name"`
-	Files       []utils.FileInfo `bencode:"files"`
+	Pieces      string        `bencode:"pieces"`
+	PieceLength int           `bencode:"piece length"`
+	Name        string        `bencode:"name"`
+	Files       []bencodeFile `bencode:"files"`
 }
 
 type bencodeTorrent struct {
@@ -98,6 +104,24 @@ func (info *bencodeInfo) hashPieces() ([]utils.BTString, error) {
 	return hashes, nil
 }
 
+// fileBounds calculates the offset and length of each file in the torrent
+func (info *bencodeInfo) fileBounds() []utils.PathInfo {
+	bounds := make([]utils.PathInfo, len(info.Files))
+	offset := 0
+
+	for i, file := range info.Files {
+		bounds[i] = utils.PathInfo{
+			Path:   filepath.Join(file.Path...),
+			Offset: offset,
+			Length: offset + file.Length,
+		}
+
+		offset += file.Length
+	}
+
+	return bounds
+}
+
 func (torrent *bencodeTorrent) createTorrentFile() (TorrentFile, error) {
 	infoHash, err := torrent.Info.hash()
 	if err != nil {
@@ -109,14 +133,19 @@ func (torrent *bencodeTorrent) createTorrentFile() (TorrentFile, error) {
 		return TorrentFile{}, err
 	}
 
+	length := 0
+	for _, file := range torrent.Info.Files {
+		length += file.Length
+	}
+
 	file := TorrentFile{
 		Announce:    torrent.Announce,
 		InfoHash:    infoHash,
 		PieceHashes: pieceHashes,
 		PieceLength: torrent.Info.PieceLength,
-		Length:      &torrent.Info.Length,
+		Length:      &length,
 		Name:        torrent.Info.Name,
-		Paths:       torrent.Info.Files,
+		Paths:       torrent.Info.fileBounds(),
 	}
 
 	return file, nil
