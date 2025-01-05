@@ -10,6 +10,7 @@ import (
 	"github.com/sauromates/leech/internal/utils"
 )
 
+// Returned upon rejected or timed out connection with a peer
 var ErrConn error = errors.New("failed to connect to a peer")
 
 // Worker listens to tasks queue and processes each received task.
@@ -24,10 +25,11 @@ func Create(infoHash, peerID utils.BTString) *Worker {
 	return &Worker{infoHash, peerID}
 }
 
+// Connect opens new TCP connection with given peer
 func (worker *Worker) Connect(peer peers.Peer) (*client.Client, error) {
 	client, err := client.Create(peer, worker.InfoHash, worker.ClientID)
 	if err != nil {
-		return nil, err
+		return nil, ErrConn
 	}
 
 	log.Printf("[INFO] Connected to peer %s\n", client.Conn.RemoteAddr())
@@ -39,7 +41,7 @@ func (worker *Worker) Connect(peer peers.Peer) (*client.Client, error) {
 func (worker *Worker) Run(peer peers.Peer, queue chan *Task, results chan *TaskResult) error {
 	client, err := worker.Connect(peer)
 	if err != nil {
-		return ErrConn
+		return err
 	}
 
 	defer client.Conn.Close()
@@ -75,6 +77,8 @@ func (worker *Worker) Run(peer peers.Peer, queue chan *Task, results chan *TaskR
 	return nil
 }
 
+// downloadPiece attempts to process given task by requesting pieces in a
+// sequential pipeline
 func (worker *Worker) downloadPiece(client *client.Client, piece *Task) ([]byte, error) {
 	task := TaskProgress{
 		Index:   piece.Index,
