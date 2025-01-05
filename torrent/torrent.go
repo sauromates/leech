@@ -7,17 +7,13 @@ import (
 )
 
 // maxConnections defines a limit of peer connections
-const maxConnections int = 20
+const maxConnections int = 10
 
 type Torrent interface {
 	// TotalSizeBytes calculates total size of downloadable content for torrent
 	TotalSizeBytes() int
 	// Download performs all necessary operations to download torrent contents
 	Download(path string) ([]byte, error)
-	// ReadInfoHash returns a unique torrent hash.
-	ReadInfoHash() utils.BTString
-	// ReadPeerID returns program ID in P2P network
-	ReadPeerID() utils.BTString
 }
 
 type BaseTorrent struct {
@@ -28,14 +24,6 @@ type BaseTorrent struct {
 	PieceLength int
 	Name        string
 	Length      int
-}
-
-func (torrent *BaseTorrent) ReadInfoHash() utils.BTString {
-	return torrent.InfoHash
-}
-
-func (torrent *BaseTorrent) ReadPeerID() utils.BTString {
-	return torrent.PeerID
 }
 
 // PieceBounds calculates where the piece with given index begins
