@@ -9,15 +9,6 @@ import (
 	"github.com/sauromates/leech/internal/peers"
 )
 
-type P2PConn interface {
-	Read() (*message.Message, error)
-	Write(*message.Message) error
-	ConfirmHavePiece(int) error
-	RequestPiece(int) error
-	Unchoke() error
-	AnnounceInterest() error
-}
-
 // Client represents a TCP connection with a peer
 type Client struct {
 	Conn     net.Conn
