@@ -1,6 +1,7 @@
 package torrent
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -32,6 +33,7 @@ type Torrent struct {
 	DownloadDir string
 }
 
+// CreateFromTorrentFile creates new [*Torrent] from decoded torrent file info
 func CreateFromTorrentFile(tf torrentfile.TorrentFile) (*Torrent, error) {
 	var peerID utils.BTString
 	copy(peerID[:], appName)
@@ -65,7 +67,7 @@ func (torrent *Torrent) Download(dir string) error {
 	pool := make(chan *peers.Peer, len(torrent.Peers))
 
 	for index, hash := range torrent.PieceHashes {
-		pieceLength := torrent.PieceSize(index)
+		pieceLength := torrent.pieceSize(index)
 		piece := worker.Task{Index: index, Hash: hash, Length: pieceLength}
 
 		queue <- &piece
@@ -80,18 +82,17 @@ func (torrent *Torrent) Download(dir string) error {
 	for len(done) < len(torrent.PieceHashes) {
 		select {
 		case piece := <-results:
-			// Skip if a piece was marked as done
+			// Skip if a piece was marked as done. It's very unlikely to
+			// get duplicate piece in select from a channel, however
 			if done[piece.Index] {
 				continue
 			}
 
-			if _, err := torrent.Write(piece, tracker); err != nil {
+			if _, err := torrent.write(piece, tracker); err != nil {
 				return err
 			}
 
 			done[piece.Index] = true
-			percent := float64(len(done)) / float64(len(torrent.PieceHashes)) * 100
-			log.Printf("[INFO] Downloaded piece %d, %0.2f%% finished", piece.Index, percent)
 		case peer := <-pool:
 			log.Printf("[INFO] Received peer %s", peer.String())
 
@@ -114,13 +115,42 @@ func (torrent *Torrent) Download(dir string) error {
 	return tracker.Finish()
 }
 
-// Write copies received piece into associated files.
+// String converts torrent info to default string representation
+func (t Torrent) String() string {
+	return fmt.Sprintf("Torrent %s\n---\nTotalSize: %.2f MB\nTotalFiles: %d\n",
+		t.Name,
+		float64(t.Length)/(1024*1024),
+		len(t.Files),
+	)
+}
+
+// pieceBounds calculates where the piece with given index begins
+// and ends within the torrent contents
+func (torrent *Torrent) pieceBounds(index int) (begin int, end int) {
+	begin = index * torrent.PieceLength
+	end = begin + torrent.PieceLength
+
+	if end > torrent.Length {
+		end = torrent.Length
+	}
+
+	return begin, end
+}
+
+// pieceSize returns the size of a piece with given index in bytes
+func (torrent *Torrent) pieceSize(index int) int {
+	begin, end := torrent.pieceBounds(index)
+
+	return end - begin
+}
+
+// write copies received piece into associated files.
 //
 // Base scenario is writing to a single file, but pieces may overlap files,
 // in which case we will split piece by relative offset and length and write
 // its parts to multiple associated files
-func (torrent *Torrent) Write(piece *worker.TaskResult, tracker io.Writer) (n int, err error) {
-	files, err := torrent.WhichFiles(piece.Index)
+func (torrent *Torrent) write(piece *worker.TaskResult, tracker io.Writer) (n int, err error) {
+	files, err := torrent.whichFiles(piece.Index)
 	if err != nil {
 		return n, err
 	}
@@ -145,14 +175,26 @@ func (torrent *Torrent) Write(piece *worker.TaskResult, tracker io.Writer) (n in
 		n += int(written)
 	}
 
+	if n != len(piece.Content) {
+		err := fmt.Sprintf(
+			"[ERROR] unexpected download volume: expected %d got %d",
+			len(piece.Content),
+			n,
+		)
+
+		log.Println(err)
+
+		return n, errors.New(err)
+	}
+
 	return n, err
 }
 
-// WhichFiles determines which files the piece belongs to by an intersection
+// whichFiles determines which files the piece belongs to by an intersection
 // of absolute offsets and lengths.
-func (torrent *Torrent) WhichFiles(piece int) (map[string]utils.FileMap, error) {
+func (torrent *Torrent) whichFiles(piece int) (map[string]utils.FileMap, error) {
 	files := make(map[string]utils.FileMap)
-	offset, length := torrent.PieceBounds(piece)
+	offset, length := torrent.pieceBounds(piece)
 
 	for _, file := range torrent.Files {
 		intersectOffset := max(offset, file.Offset)
@@ -176,34 +218,6 @@ func (torrent *Torrent) WhichFiles(piece int) (map[string]utils.FileMap, error) 
 	}
 
 	return files, nil
-}
-
-// PieceBounds calculates where the piece with given index begins
-// and ends within the torrent contents
-func (torrent *Torrent) PieceBounds(index int) (begin int, end int) {
-	begin = index * torrent.PieceLength
-	end = begin + torrent.PieceLength
-
-	if end > torrent.Length {
-		end = torrent.Length
-	}
-
-	return begin, end
-}
-
-// PieceSize returns the size of a piece with given index in bytes
-func (torrent *Torrent) PieceSize(index int) int {
-	begin, end := torrent.PieceBounds(index)
-
-	return end - begin
-}
-
-func (t Torrent) String() string {
-	return fmt.Sprintf("Torrent %s\n---\nTotalSize: %.2f MB\nTotalFiles: %d\n",
-		t.Name,
-		float64(t.Length)/(1024*1024),
-		len(t.Files),
-	)
 }
 
 // startWorker transforms peer into a listener for a task queue and
