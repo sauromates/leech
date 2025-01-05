@@ -54,9 +54,12 @@ func (torrent *BaseTorrent) startWorker(
 	results chan *worker.TaskResult,
 	peers chan *peers.Peer,
 ) {
-	w := worker.Create(torrent.InfoHash, torrent.PeerID)
+	w := worker.Create(peer, torrent.InfoHash, torrent.PeerID)
 
-	if err := w.Run(peer, queue, results); err != nil {
+	if err := w.Run(queue, results); err != nil {
+		// Peer should be put back to the pool only if there was no
+		// connection errors, otherwise it's pointless since workers would
+		// constantly try to reconnect to unresponsive peers
 		if err != worker.ErrConn {
 			peers <- &peer
 		}

@@ -16,18 +16,19 @@ var ErrConn error = errors.New("failed to connect to a peer")
 // Worker listens to tasks queue and processes each received task.
 // Peer field is actually a connection here.
 type Worker struct {
+	Peer     peers.Peer
 	InfoHash utils.BTString
 	ClientID utils.BTString
 }
 
 // Create creates new connection for a peer and puts it into new worker instance
-func Create(infoHash, peerID utils.BTString) *Worker {
-	return &Worker{infoHash, peerID}
+func Create(peer peers.Peer, infoHash, peerID utils.BTString) *Worker {
+	return &Worker{peer, infoHash, peerID}
 }
 
 // Connect opens new TCP connection with given peer
-func (worker *Worker) Connect(peer peers.Peer) (*client.Client, error) {
-	client, err := client.Create(peer, worker.InfoHash, worker.ClientID)
+func (worker *Worker) Connect() (*client.Client, error) {
+	client, err := client.Create(worker.Peer, worker.InfoHash, worker.ClientID)
 	if err != nil {
 		return nil, ErrConn
 	}
@@ -38,8 +39,8 @@ func (worker *Worker) Connect(peer peers.Peer) (*client.Client, error) {
 }
 
 // Run starts listening to a task queue until it's empty or until a download error occurs
-func (worker *Worker) Run(peer peers.Peer, queue chan *Task, results chan *TaskResult) error {
-	client, err := worker.Connect(peer)
+func (worker *Worker) Run(queue chan *Task, results chan *TaskResult) error {
+	client, err := worker.Connect()
 	if err != nil {
 		return err
 	}
