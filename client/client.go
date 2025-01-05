@@ -1,7 +1,6 @@
 package client
 
 import (
-	"log"
 	"net"
 	"time"
 
@@ -41,13 +40,7 @@ func (client *Client) Write(msg *message.Message) error {
 	client.Conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 	defer client.Conn.SetWriteDeadline(time.Time{})
 
-	payload, err := client.Conn.Write(msg.Serialize())
-	log.Printf(
-		"[INFO] Sent %s message to %s (%d bytes sent)",
-		msg.String(),
-		client.Peer.String(),
-		payload,
-	)
+	_, err := client.Conn.Write(msg.Serialize())
 
 	return err
 }
