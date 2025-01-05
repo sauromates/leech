@@ -35,7 +35,7 @@ func TestPieceBounds(t *testing.T) {
 	}
 
 	for _, tc := range tt {
-		begin, end := tc.torrent.PieceBounds(tc.pieceIndex)
+		begin, end := tc.torrent.pieceBounds(tc.pieceIndex)
 
 		assert.Equal(t, tc.begin, begin)
 		assert.Equal(t, tc.end, end)
@@ -109,7 +109,7 @@ func TestWhichFiles(t *testing.T) {
 
 	for _, tc := range tt {
 		for i := range len(tc.expectedFiles) {
-			files, err := tc.torrent.WhichFiles(i)
+			files, err := tc.torrent.whichFiles(i)
 			if tc.shouldFail {
 				assert.NotNil(t, err)
 			} else {
@@ -191,7 +191,7 @@ func TestWrite(t *testing.T) {
 	for name, tc := range tt {
 		fileSizes := make(map[string]int64, 3)
 		for _, expectation := range tc.pieces {
-			_, err := tc.torrent.Write(expectation.piece, nil)
+			_, err := tc.torrent.write(expectation.piece, nil)
 			if tc.shouldFail {
 				assert.NotNil(t, err)
 			} else {
