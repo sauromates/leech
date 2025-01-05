@@ -202,10 +202,10 @@ func TestWrite(t *testing.T) {
 				actualFile, err := os.Stat(file.Path)
 				fileSizes[file.Path] = actualFile.Size()
 
-				defer os.Remove(file.Path)
-
 				assert.Nil(t, err)
 				assert.Equal(t, file.Length, int(actualFile.Size()), name+" case, file "+file.Path)
+
+				os.Remove(file.Path)
 			}
 		}
 
