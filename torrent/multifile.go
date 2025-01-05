@@ -16,25 +16,20 @@ import (
 	"github.com/schollz/progressbar/v3"
 )
 
-type FileWithBounds struct {
-	name  string
-	begin int
-	end   int
-}
-
 type MultiFileTorrent struct {
 	BaseTorrent
-	Paths []utils.FileInfo
+	Paths []utils.PathInfo
+}
+
+type FileMap struct {
+	FileOffset int64
+	PieceStart int
+	PieceEnd   int
 }
 
 // TotalSizeBytes sums length of all files in a multi file torrent.
 func (torrent MultiFileTorrent) TotalSizeBytes() int {
-	size := 0
-	for _, file := range torrent.Paths {
-		size += file.Length
-	}
-
-	return size
+	return torrent.Length
 }
 
 // Download runs workers asynchronously after preparing necessary infrastructure
@@ -55,16 +50,22 @@ func (torrent *MultiFileTorrent) Download(path string) ([]byte, error) {
 		pool <- &peer
 	}
 
-	done, bar := 0, progressbar.DefaultBytes(int64(torrent.TotalSizeBytes()), "downloading")
-	for done < len(torrent.PieceHashes) {
+	done := make(map[int]bool)
+	tracker := progressbar.DefaultBytes(int64(torrent.TotalSizeBytes()), "Downloading")
+	for len(done) < len(torrent.PieceHashes) {
 		select {
 		case piece := <-results:
-			if err := torrent.Write(path, piece, bar); err != nil {
+			// Skip if a piece was marked as done
+			if done[piece.Index] {
+				continue
+			}
+
+			if _, err := torrent.Write(path, piece, tracker); err != nil {
 				return nil, err
 			}
 
-			done++
-			percent := float64(done) / float64(len(torrent.PieceHashes)) * 100
+			done[piece.Index] = true
+			percent := float64(len(done)) / float64(len(torrent.PieceHashes)) * 100
 			log.Printf("[INFO] Downloaded piece %d, %0.2f%% finished", piece.Index, percent)
 		case peer := <-pool:
 			log.Printf("[INFO] Received peer %s", peer.String())
@@ -85,69 +86,81 @@ func (torrent *MultiFileTorrent) Download(path string) ([]byte, error) {
 	close(results)
 	close(pool)
 
-	bar.Finish()
+	tracker.Finish()
 
 	return []byte{}, nil
 }
 
-// Write populates a file with downloaded piece. BasePath is a directory where
-// any downloaded files should be stored.
-func (torrent *MultiFileTorrent) Write(basePath string, piece *worker.TaskResult, tracker io.Writer) error {
-	fileBounds, err := torrent.WhichFile(piece.Index)
+// Write copies received piece into associated files.
+//
+// Base scenario is writing to a single file, but pieces may overlap files,
+// in which case we will split piece by relative offset and length and write
+// its parts to multiple associated files
+func (torrent *MultiFileTorrent) Write(basePath string, piece *worker.TaskResult, tracker io.Writer) (int, error) {
+	files, err := torrent.WhichFiles(piece.Index)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
-	filepath := filepath.Join(basePath, fileBounds.name)
-	file, err := os.OpenFile(filepath, os.O_CREATE|os.O_WRONLY, os.ModePerm)
-	if err != nil {
-		return err
+	total := 0
+
+	for path, chunk := range files {
+		filepath := filepath.Join(basePath, path)
+		file, err := os.OpenFile(filepath, os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			return 0, err
+		}
+
+		defer file.Close()
+
+		length := chunk.PieceEnd - chunk.PieceStart
+		content := make([]byte, length)
+		copy(content, piece.Content[chunk.PieceStart:chunk.PieceEnd])
+
+		src := bytes.NewReader(content)
+		var dst io.Writer = io.NewOffsetWriter(file, chunk.FileOffset)
+		if tracker != nil {
+			dst = io.MultiWriter(dst, tracker)
+		}
+
+		copied, err := io.Copy(dst, src)
+		if err != nil {
+			return 0, err
+		}
+
+		file.Close()
+
+		total += int(copied)
 	}
 
-	defer file.Close()
-
-	writer := io.NewOffsetWriter(file, int64(fileBounds.begin))
-	if _, err := io.Copy(io.MultiWriter(writer, tracker), bytes.NewReader(piece.Content)); err != nil {
-		return err
-	}
-
-	return nil
+	return total, nil
 }
 
-// WhichFile determines which file a piece belongs to based on its index
-func (torrent *MultiFileTorrent) WhichFile(index int) (FileWithBounds, error) {
-	// Assemble a slice of file boundaries
-	bounds := make([]FileWithBounds, len(torrent.Paths))
-	cumulativeOffset := 0
-	for i, file := range torrent.Paths {
-		bounds[i] = FileWithBounds{
-			name:  filepath.Join(file.Path...),
-			begin: cumulativeOffset,
-			end:   cumulativeOffset + file.Length + 1,
-		}
+// WhichFiles determines which files the piece belongs to by an intersection
+// of absolute offsets and lengths.
+func (torrent *MultiFileTorrent) WhichFiles(piece int) (map[string]FileMap, error) {
+	files := make(map[string]FileMap)
+	offset, length := torrent.PieceBounds(piece)
 
-		cumulativeOffset += file.Length
-	}
+	for _, file := range torrent.Paths {
+		intersectOffset := max(offset, file.Offset)
+		intersectLength := min(length, file.Length)
 
-	pieceBegin, pieceEnd := torrent.PieceBounds(index)
-	// Quickly search for the right interval for received piece index
-	left, right := 0, len(bounds)-1
-	for left <= right {
-		mid := left + (right-left)/2
-		file := bounds[mid]
+		if intersectOffset < intersectLength {
+			relativeOffset := intersectOffset - offset
+			relativeLength := intersectLength - intersectOffset
 
-		if pieceBegin <= file.end && pieceEnd >= file.begin {
-			return FileWithBounds{
-				name:  file.name,
-				begin: max(0, pieceBegin-file.begin),
-				end:   min(file.end-file.begin+1, pieceEnd-file.begin),
-			}, nil
-		} else if pieceBegin < file.begin {
-			right = mid - 1
-		} else {
-			left = mid + 1
+			files[file.Path] = FileMap{
+				FileOffset: int64(intersectOffset - file.Offset),
+				PieceStart: relativeOffset,
+				PieceEnd:   relativeOffset + relativeLength,
+			}
 		}
 	}
 
-	return FileWithBounds{}, fmt.Errorf("failed to associate piece %d with a file", index)
+	if len(files) == 0 {
+		return nil, fmt.Errorf("no files found for piece %d", piece)
+	}
+
+	return files, nil
 }
