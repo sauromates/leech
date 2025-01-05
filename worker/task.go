@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/sha1"
 	"fmt"
-	"log"
 
 	"github.com/sauromates/leech/client"
 	"github.com/sauromates/leech/internal/message"
@@ -17,7 +16,7 @@ const (
 	MaxBlockSize int = 16384
 	// MaxBacklog is the number of unfulfilled requests a client can have
 	// in its pipeline
-	MaxBacklog int = 50
+	MaxBacklog int = 5
 )
 
 // Task represents downloadable piece
@@ -53,8 +52,6 @@ func (state *TaskProgress) ReadMessage() error {
 	if msg == nil {
 		return nil
 	}
-
-	log.Printf("[INFO] Received %v from %s", msg, state.Client.Peer.String())
 
 	switch msg.ID {
 	case message.Unchoke:
