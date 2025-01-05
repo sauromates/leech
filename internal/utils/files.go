@@ -10,3 +10,9 @@ type PathInfo struct {
 	// Length is an end position within the whole torrent
 	Length int
 }
+
+type FileMap struct {
+	FileOffset int64
+	PieceStart int
+	PieceEnd   int
+}

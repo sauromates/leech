@@ -21,7 +21,7 @@ type BencodeTrackerResponse struct {
 	Failure string `bencode:"failure reason"`
 }
 
-func (t *TorrentFile) buildTrackerURL(peerID utils.BTString, port uint16) (string, error) {
+func (t *TorrentFile) BuildTrackerURL(peerID utils.BTString, port uint16) (string, error) {
 	baseURL, err := url.Parse(t.Announce)
 	if err != nil {
 		return "", err
@@ -42,8 +42,8 @@ func (t *TorrentFile) buildTrackerURL(peerID utils.BTString, port uint16) (strin
 	return baseURL.String(), nil
 }
 
-func (t *TorrentFile) requestPeers(peerID utils.BTString, port uint16) ([]peers.Peer, error) {
-	url, err := t.buildTrackerURL(peerID, port)
+func (t *TorrentFile) RequestPeers(peerID utils.BTString, port uint16) ([]peers.Peer, error) {
+	url, err := t.BuildTrackerURL(peerID, port)
 	if err != nil {
 		return nil, err
 	}
