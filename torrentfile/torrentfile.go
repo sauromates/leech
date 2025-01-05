@@ -17,7 +17,7 @@ type TorrentFile struct {
 	PieceLength int
 	Length      *int
 	Name        string
-	Paths       []utils.FileInfo
+	Paths       []utils.PathInfo
 }
 
 func Open(path string) (TorrentFile, error) {
@@ -105,15 +105,13 @@ func (tfile *TorrentFile) DownloadMultiple(dir string) error {
 	return nil
 }
 
+// GetLength returns actual torrent length for any concrete torrent type
+// i.e. length of single-file torrent or sum of file sizes in multi-file torrent
 func (torrent *TorrentFile) GetLength() int {
 	if len(torrent.Paths) == 0 {
 		return *torrent.Length
 	}
 
-	size := 0
-	for _, file := range torrent.Paths {
-		size += file.Length
-	}
-
-	return size
+	// Last absolute length matches torrent length
+	return torrent.Paths[len(torrent.Paths)-1].Length
 }
