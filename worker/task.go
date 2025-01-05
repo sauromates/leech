@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha1"
 	"fmt"
+	_ "io"
 
 	"github.com/sauromates/leech/client"
 	"github.com/sauromates/leech/internal/message"
@@ -27,6 +28,9 @@ type Task struct {
 }
 
 // TaskResult holds contents of downloaded piece
+//
+// It also implements [io.Reader] and [io.ReaderAt] to allow results usage
+// in I/O operations
 type TaskResult struct {
 	Index   int
 	Content []byte
@@ -103,4 +107,20 @@ func (piece *Task) verifyHashSum(content []byte) error {
 	}
 
 	return nil
+}
+
+// reader returns new [*bytes.Reader] instance to be used later for [io.Reader]
+// and [io.ReaderAt] implementations
+func (piece *TaskResult) reader() *bytes.Reader {
+	return bytes.NewReader(piece.Content)
+}
+
+// Read calls underlying [*bytes.Reader] to read piece contents
+func (piece *TaskResult) Read(b []byte) (n int, err error) {
+	return piece.reader().Read(b)
+}
+
+// ReadAt calls underlying [*bytes.Reader] to read piece contents from offset
+func (piece *TaskResult) ReadAt(b []byte, off int64) (n int, err error) {
+	return piece.reader().ReadAt(b, off)
 }
