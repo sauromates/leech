@@ -106,11 +106,11 @@ func (info *bencodeInfo) hashPieces() ([]utils.BTString, error) {
 
 // fileBounds calculates the offset and length of each file in the torrent
 func (info *bencodeInfo) fileBounds() []utils.PathInfo {
-	bounds := make([]utils.PathInfo, len(info.Files))
+	files := make([]utils.PathInfo, len(info.Files))
 	offset := 0
 
 	for i, file := range info.Files {
-		bounds[i] = utils.PathInfo{
+		files[i] = utils.PathInfo{
 			Path:   filepath.Join(file.Path...),
 			Offset: offset,
 			Length: offset + file.Length,
@@ -119,7 +119,7 @@ func (info *bencodeInfo) fileBounds() []utils.PathInfo {
 		offset += file.Length
 	}
 
-	return bounds
+	return files
 }
 
 func (torrent *bencodeTorrent) createTorrentFile() (TorrentFile, error) {
@@ -133,17 +133,12 @@ func (torrent *bencodeTorrent) createTorrentFile() (TorrentFile, error) {
 		return TorrentFile{}, err
 	}
 
-	length := 0
-	for _, file := range torrent.Info.Files {
-		length += file.Length
-	}
-
 	file := TorrentFile{
 		Announce:    torrent.Announce,
 		InfoHash:    infoHash,
 		PieceHashes: pieceHashes,
 		PieceLength: torrent.Info.PieceLength,
-		Length:      &length,
+		Length:      &torrent.Info.Length,
 		Name:        torrent.Info.Name,
 		Paths:       torrent.Info.fileBounds(),
 	}

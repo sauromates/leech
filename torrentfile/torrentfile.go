@@ -1,13 +1,10 @@
 package torrentfile
 
 import (
-	"crypto/rand"
 	"os"
-	"path/filepath"
 
 	"github.com/jackpal/bencode-go"
 	"github.com/sauromates/leech/internal/utils"
-	"github.com/sauromates/leech/torrent"
 )
 
 type TorrentFile struct {
@@ -20,6 +17,7 @@ type TorrentFile struct {
 	Paths       []utils.PathInfo
 }
 
+// Open unmarshals bencoded file into a TorrentFile struct
 func Open(path string) (TorrentFile, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -36,82 +34,27 @@ func Open(path string) (TorrentFile, error) {
 	return torrent.createTorrentFile()
 }
 
-func (tf *TorrentFile) Parse() (torrent.Torrent, error) {
-	var peerID utils.BTString
-	if _, err := rand.Read(peerID[:]); err != nil {
-		return nil, err
-	}
-
-	peers, err := tf.requestPeers(peerID, uint16(49160))
-	if err != nil {
-		return nil, err
-	}
-
-	baseMeta := torrent.BaseTorrent{
-		Peers:       peers,
-		PeerID:      peerID,
-		InfoHash:    tf.InfoHash,
-		PieceHashes: tf.PieceHashes,
-		PieceLength: tf.PieceLength,
-		Name:        tf.Name,
-		Length:      tf.GetLength(),
-	}
-
-	var parsed torrent.Torrent
-	if len(tf.Paths) > 0 {
-		parsed = &torrent.MultiFileTorrent{BaseTorrent: baseMeta, Paths: tf.Paths}
-	} else {
-		parsed = &torrent.SingleFileTorrent{BaseTorrent: baseMeta}
-	}
-
-	return parsed, nil
-}
-
-func (tfile *TorrentFile) Download(to string) error {
-	source, err := tfile.Parse()
-	if err != nil {
-		return err
-	}
-
-	content, err := source.Download(filepath.Dir(to))
-	if err != nil {
-		return err
-	}
-
-	outFile, err := os.Create(to)
-	if err != nil {
-		return err
-	}
-
-	defer outFile.Close()
-
-	if _, err := outFile.Write(content); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (tfile *TorrentFile) DownloadMultiple(dir string) error {
-	source, err := tfile.Parse()
-	if err != nil {
-		return err
-	}
-
-	if _, err := source.Download(dir); err != nil {
-		return err
-	}
-
-	return nil
-}
-
 // GetLength returns actual torrent length for any concrete torrent type
 // i.e. length of single-file torrent or sum of file sizes in multi-file torrent
-func (torrent *TorrentFile) GetLength() int {
-	if len(torrent.Paths) == 0 {
-		return *torrent.Length
+func (tf *TorrentFile) GetLength() int {
+	if len(tf.Paths) == 0 {
+		return *tf.Length
 	}
 
 	// Last absolute length matches torrent length
-	return torrent.Paths[len(torrent.Paths)-1].Length
+	return tf.Paths[len(tf.Paths)-1].Length
+}
+
+// GetFiles creates a slice of files both for single- and multi-file torrents.
+//
+// In case of a single-file torrent it puts a file with name of the torrent
+// itself with offset and length matched with the whole torrent [0:Length].
+func (tf *TorrentFile) GetFiles() []utils.PathInfo {
+	if len(tf.Paths) > 0 {
+		return tf.Paths
+	}
+
+	return []utils.PathInfo{
+		{Path: tf.Name, Offset: 0, Length: *tf.Length},
+	}
 }

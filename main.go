@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/sauromates/leech/torrent"
 	"github.com/sauromates/leech/torrentfile"
 )
 
@@ -19,28 +20,23 @@ func main() {
 		log.Fatal(err)
 	}
 
-	if err := printTorrentDetails(torrentfile); err != nil {
+	dir, err := createDownloadDir(torrentfile.Name)
+	if err != nil {
 		log.Fatal(err)
 	}
 
-	var downloadError error
-
-	if len(torrentfile.Paths) > 0 {
-		dir, err := createDownloadDir(torrentfile.Name)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		defer printResultDetails(dir)
-
-		downloadError = torrentfile.DownloadMultiple(dir)
-	} else {
-		downloadError = torrentfile.Download(torrentfile.Name)
+	torrent, err := torrent.CreateFromTorrentFile(torrentfile)
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	if downloadError != nil {
-		log.Fatal(downloadError)
+	fmt.Printf("Downloading\n---\n%s\n", torrent)
+
+	if err := torrent.Download(dir); err != nil {
+		log.Fatal(err)
 	}
+
+	printResultDetails(dir)
 }
 
 // configureLogs sets default log output to a file with given path
@@ -94,27 +90,6 @@ func printResultDetails(dir string) error {
 		mbSize := float64(info.Size()) / (1024 * 1024)
 		fmt.Printf("    %s: %.2f MB\n", info.Name(), mbSize)
 	}
-
-	return nil
-}
-
-// printTorrentDetails outputs base info about the torrent
-func printTorrentDetails(tf torrentfile.TorrentFile) error {
-	info, err := tf.Parse()
-	if err != nil {
-		return err
-	}
-
-	filesCount := 1
-	if len(tf.Paths) > 0 {
-		filesCount = len(tf.Paths)
-	}
-
-	fmt.Printf("Downloading %s\n---\nTotalSize: %.2f MB\nTotalFiles: %d\n",
-		tf.Name,
-		float64(info.TotalSizeBytes())/(1024*1024),
-		filesCount,
-	)
 
 	return nil
 }
