@@ -1,3 +1,5 @@
+[![Go Reference](https://pkg.go.dev/badge/github.com/sauromates/leech.svg)](https://pkg.go.dev/github.com/sauromates/leech)
+
 # LEECH
 
 Console BitTorrent client written in Go.
