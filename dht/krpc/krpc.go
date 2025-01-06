@@ -7,73 +7,84 @@ import (
 
 	"github.com/jackpal/bencode-go"
 	"github.com/sauromates/leech/dht/query"
+	"github.com/sauromates/leech/internal/utils"
 )
 
-// Error is deserialized from bencoded list ["code", "message"]
-type Error struct {
-	Code   int
-	Reason string
+// messageID is a default value of transaction ID used in KRPC messages.
+const messageID string = "aa"
+
+// Message holds common fields for any type of KRPC messages.
+type Message struct {
+	TransactionID string `bencode:"t"`
+	MessageType   string `bencode:"y"`
 }
 
 // MessageQuery represents incoming query response. Except for default fields
 // it also holds `q` for type of query and `a` for response value.
 type MessageQuery struct {
-	TransactionID string      `bencode:"t"`
-	MessageType   string      `bencode:"y"`
-	QueryType     string      `bencode:"q"`
-	Body          interface{} `bencode:"a"`
+	Message
+	QueryType string `bencode:"q"`
+	Body      any    `bencode:"a"`
 }
 
 // MessageResponse represents incoming KRPC response.
 type MessageResponse struct {
-	TransactionID string      `bencode:"t"`
-	MessageType   string      `bencode:"y"`
-	Response      interface{} `bencode:"r"`
+	Message
+	Response any `bencode:"r"`
 }
 
 // MessageError represents incoming KRPC error response.
 type MessageError struct {
-	TransactionID string `bencode:"t"`
-	MessageType   string `bencode:"y"`
-	Error         []any  `bencode:"e"`
+	Message
+	Error []any `bencode:"e"`
 }
 
 // NewQueryMessage assembles new KRPC message with [TypeQuery].
-func NewQueryMessage(q query.QueryType, body interface{}) (*MessageQuery, error) {
+func NewQueryMessage(q query.QueryType, body any) (*MessageQuery, error) {
 	if q == query.Unknown {
 		return nil, query.ErrUnknownQuery
 	}
 
 	msg := MessageQuery{
-		TransactionID: "aa",
-		MessageType:   TypeQuery.String(),
-		QueryType:     q.String(),
-		Body:          body,
+		Message: Message{
+			TransactionID: messageID,
+			MessageType:   TypeQuery.String(),
+		},
+		QueryType: q.String(),
+		Body:      body,
 	}
 
 	return &msg, nil
 }
 
-func NewResponseMessage(body interface{}) *MessageResponse {
+// NewResponseMessage assembles new KRPC message with [TypeResponse].
+func NewResponseMessage(body any) *MessageResponse {
 	return &MessageResponse{
-		TransactionID: "aa",
-		MessageType:   TypeResponse.String(),
-		Response:      body,
+		Message: Message{
+			TransactionID: messageID,
+			MessageType:   TypeResponse.String(),
+		},
+		Response: body,
 	}
 }
 
+// NewResponseMessage assembles new KRPC message with [TypeError].
 func NewErrorMessage(body []any) *MessageError {
 	return &MessageError{
-		TransactionID: "aa",
-		MessageType:   TypeError.String(),
-		Error:         body,
+		Message: Message{
+			TransactionID: messageID,
+			MessageType:   TypeError.String(),
+		},
+		Error: body,
 	}
 }
 
 // Serialize marshals KRPC message into bencode dictionary.
-func Serialize(msg interface{}) ([]byte, error) {
+func Serialize(msg any) ([]byte, error) {
+	flatMsg := utils.FlattenTaggedStruct(msg, "bencode")
+
 	var buf bytes.Buffer
-	if err := bencode.Marshal(&buf, msg); err != nil {
+	if err := bencode.Marshal(&buf, flatMsg); err != nil {
 		return nil, err
 	}
 
