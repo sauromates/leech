@@ -1,4 +1,4 @@
-package magnet
+package magnetlink
 
 import (
 	"testing"

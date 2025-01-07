@@ -1,4 +1,7 @@
-package magnet
+// Package magnetlink provides support for parsing [magnet links]
+//
+// [magnet links]: https://en.wikipedia.org/wiki/Magnet_URI_scheme
+package magnetlink
 
 import (
 	"fmt"
@@ -20,7 +23,7 @@ type MagnetLink struct {
 
 // Unmarshal parses magnet link into a struct using [qs.UnmarshalValues] with
 // some additional logic (i.e. retrieving info hash from complex string).
-func Unmarshal(link string, target *MagnetLink) error {
+func Unmarshal(link string, target any) error {
 	query, ok := strings.CutPrefix(link, "magnet:?")
 	if !ok {
 		return fmt.Errorf("[ERROR] %s is not a valid magnet link", link)
