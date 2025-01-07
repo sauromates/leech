@@ -73,25 +73,3 @@ func TestFlattenTaggedStruct(t *testing.T) {
 		assert.Equal(t, tc.output, FlattenTaggedStruct(tc.input, "json"), name)
 	}
 }
-
-func TestDecodeHEX(t *testing.T) {
-	type testCase struct {
-		input  string
-		output BTString
-	}
-
-	tt := map[string]testCase{
-		"valid string": {
-			input:  "998601FA7B568ABDE138498D12ABA41C1E0CB893",
-			output: [20]byte{0x99, 0x86, 0x01, 0xFA, 0x7B, 0x56, 0x8A, 0xBD, 0xE1, 0x38, 0x49, 0x8D, 0x12, 0xAB, 0xA4, 0x1C, 0x1E, 0x0C, 0xB8, 0x93},
-		},
-		"invalid string": {
-			input:  "test",
-			output: [20]byte{},
-		},
-	}
-
-	for name, tc := range tt {
-		assert.Equal(t, tc.output, DecodeHEX(tc.input), name)
-	}
-}
