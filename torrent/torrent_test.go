@@ -5,6 +5,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/sauromates/leech/internal/bthash"
 	"github.com/sauromates/leech/internal/peers"
 	"github.com/sauromates/leech/internal/utils"
 	"github.com/sauromates/leech/worker"
@@ -219,7 +220,7 @@ func TestWrite(t *testing.T) {
 }
 
 func fakeTorrent(pieceLength, torrentLength int, paths []utils.PathInfo) Torrent {
-	var randPeerID, randInfoHash utils.BTString
+	var randPeerID, randInfoHash bthash.Hash
 	rand.Read(randPeerID[:])
 	rand.Read(randInfoHash[:])
 
@@ -227,7 +228,7 @@ func fakeTorrent(pieceLength, torrentLength int, paths []utils.PathInfo) Torrent
 		Peers:       []peers.Peer{},
 		PeerID:      randPeerID,
 		InfoHash:    randInfoHash,
-		PieceHashes: []utils.BTString{},
+		PieceHashes: []bthash.Hash{},
 		PieceLength: pieceLength,
 		Name:        "test",
 		Length:      torrentLength,

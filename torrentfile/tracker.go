@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/jackpal/bencode-go"
+	"github.com/sauromates/leech/internal/bthash"
 	"github.com/sauromates/leech/internal/peers"
-	"github.com/sauromates/leech/internal/utils"
 )
 
 // Bencoded response from announcement request
@@ -21,7 +21,7 @@ type BencodeTrackerResponse struct {
 	Failure string `bencode:"failure reason"`
 }
 
-func (t *TorrentFile) BuildTrackerURL(peerID utils.BTString, port uint16) (string, error) {
+func (t *TorrentFile) BuildTrackerURL(peerID bthash.Hash, port uint16) (string, error) {
 	baseURL, err := url.Parse(t.Announce)
 	if err != nil {
 		return "", err
@@ -42,7 +42,7 @@ func (t *TorrentFile) BuildTrackerURL(peerID utils.BTString, port uint16) (strin
 	return baseURL.String(), nil
 }
 
-func (t *TorrentFile) RequestPeers(peerID utils.BTString, port uint16) ([]peers.Peer, error) {
+func (t *TorrentFile) RequestPeers(peerID bthash.Hash, port uint16) ([]peers.Peer, error) {
 	url, err := t.BuildTrackerURL(peerID, port)
 	if err != nil {
 		return nil, err

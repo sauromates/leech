@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	"github.com/sauromates/leech/internal/bitfield"
+	"github.com/sauromates/leech/internal/bthash"
 	"github.com/sauromates/leech/internal/handshake"
-	"github.com/sauromates/leech/internal/utils"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -16,8 +16,8 @@ func TestCompleteHandshake(t *testing.T) {
 		shouldFail      bool
 	}
 
-	infoHash := utils.BTString{134, 212, 200, 0, 36, 164, 105, 190, 76, 80, 188, 90, 16, 44, 247, 23, 128, 49, 0, 116}
-	peerID := utils.BTString{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20}
+	infoHash := bthash.Hash{134, 212, 200, 0, 36, 164, 105, 190, 76, 80, 188, 90, 16, 44, 247, 23, 128, 49, 0, 116}
+	peerID := bthash.Hash{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20}
 
 	tt := map[string]testCase{
 		"successful handshake": {
@@ -25,7 +25,7 @@ func TestCompleteHandshake(t *testing.T) {
 			output: &handshake.Handshake{
 				PSTR:     "BitTorrent protocol",
 				InfoHash: infoHash,
-				PeerID:   utils.BTString{45, 83, 89, 48, 48, 49, 48, 45, 192, 125, 147, 203, 136, 32, 59, 180, 253, 168, 193, 19},
+				PeerID:   bthash.Hash{45, 83, 89, 48, 48, 49, 48, 45, 192, 125, 147, 203, 136, 32, 59, 180, 253, 168, 193, 19},
 			},
 			shouldFail: false,
 		},

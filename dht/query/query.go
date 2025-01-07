@@ -6,7 +6,7 @@ package query
 import (
 	"errors"
 
-	"github.com/sauromates/leech/internal/utils"
+	"github.com/sauromates/leech/internal/bthash"
 )
 
 // QueryType represents all possible types of DHT queries.
@@ -16,7 +16,7 @@ type QueryType struct {
 
 // Query represents a request sent to nodes in DHT.
 type Query struct {
-	NodeID    utils.BTString
+	NodeID    bthash.Hash
 	QueryType QueryType
 }
 

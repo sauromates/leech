@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/sauromates/leech/client"
+	"github.com/sauromates/leech/internal/bthash"
 	"github.com/sauromates/leech/internal/peers"
-	"github.com/sauromates/leech/internal/utils"
 )
 
 // Returned upon rejected or timed out connection with a peer
@@ -17,12 +17,12 @@ var ErrConn error = errors.New("failed to connect to a peer")
 type Worker struct {
 	peer     peers.Peer
 	client   *client.Client
-	infoHash utils.BTString
-	clientID utils.BTString
+	infoHash bthash.Hash
+	clientID bthash.Hash
 }
 
 // Create creates new connection for a peer and puts it into new worker instance
-func Create(peer peers.Peer, infoHash, peerID utils.BTString) *Worker {
+func Create(peer peers.Peer, infoHash, peerID bthash.Hash) *Worker {
 	return &Worker{peer, nil, infoHash, peerID}
 }
 

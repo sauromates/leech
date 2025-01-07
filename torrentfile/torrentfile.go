@@ -4,13 +4,14 @@ import (
 	"os"
 
 	"github.com/jackpal/bencode-go"
+	"github.com/sauromates/leech/internal/bthash"
 	"github.com/sauromates/leech/internal/utils"
 )
 
 type TorrentFile struct {
 	Announce    string
-	InfoHash    utils.BTString
-	PieceHashes []utils.BTString
+	InfoHash    bthash.Hash
+	PieceHashes []bthash.Hash
 	PieceLength int
 	Length      *int
 	Name        string

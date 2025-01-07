@@ -6,16 +6,16 @@ import (
 	"strings"
 
 	"github.com/pasztorpisti/qs"
-	"github.com/sauromates/leech/internal/utils"
+	"github.com/sauromates/leech/internal/bthash"
 )
 
 // MagnetLink represents parsed info from an actual magnet link.
 // @todo convert to a torrent
 type MagnetLink struct {
-	InfoHash   utils.BTString `qs:"xt,req"`
-	Name       string         `qs:"dn,req"`
-	Length     int            `qs:"xl,opt"`
-	TrackerURL string         `qs:"tr,opt"`
+	InfoHash   bthash.Hash `qs:"xt,req"`
+	Name       string      `qs:"dn,req"`
+	Length     int         `qs:"xl,opt"`
+	TrackerURL string      `qs:"tr,opt"`
 }
 
 // Unmarshal parses magnet link into a struct using [qs.UnmarshalValues] with

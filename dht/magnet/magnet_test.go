@@ -3,7 +3,7 @@ package magnet
 import (
 	"testing"
 
-	"github.com/sauromates/leech/internal/utils"
+	"github.com/sauromates/leech/internal/bthash"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -18,7 +18,7 @@ func TestUnmarshal(t *testing.T) {
 		"valid magnet link": {
 			input: "magnet:?xt=urn:btih:998601FA7B568ABDE138498D12ABA41C1E0CB893&tr=http://example.com&dn=test",
 			output: MagnetLink{
-				InfoHash:   utils.DecodeHEX("998601FA7B568ABDE138498D12ABA41C1E0CB893"),
+				InfoHash:   bthash.NewFromString("998601FA7B568ABDE138498D12ABA41C1E0CB893"),
 				Name:       "test",
 				Length:     0,
 				TrackerURL: "http://example.com",

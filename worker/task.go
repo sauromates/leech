@@ -7,8 +7,8 @@ import (
 	_ "io"
 
 	"github.com/sauromates/leech/client"
+	"github.com/sauromates/leech/internal/bthash"
 	"github.com/sauromates/leech/internal/message"
-	"github.com/sauromates/leech/internal/utils"
 )
 
 const (
@@ -23,7 +23,7 @@ const (
 // Piece represents downloadable piece
 type Piece struct {
 	Index  int
-	Hash   utils.BTString
+	Hash   bthash.Hash
 	Length int
 }
 

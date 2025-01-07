@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/sauromates/leech/internal/bthash"
 	"github.com/sauromates/leech/internal/peers"
 	"github.com/sauromates/leech/internal/utils"
 	"github.com/sauromates/leech/torrentfile"
@@ -23,9 +24,9 @@ const (
 
 type Torrent struct {
 	Peers       []peers.Peer
-	PeerID      utils.BTString
-	InfoHash    utils.BTString
-	PieceHashes []utils.BTString
+	PeerID      bthash.Hash
+	InfoHash    bthash.Hash
+	PieceHashes []bthash.Hash
 	PieceLength int
 	Name        string
 	Length      int
@@ -35,7 +36,7 @@ type Torrent struct {
 
 // CreateFromTorrentFile creates new [*Torrent] from decoded torrent file info
 func CreateFromTorrentFile(tf torrentfile.TorrentFile) (*Torrent, error) {
-	var peerID utils.BTString
+	var peerID bthash.Hash
 	copy(peerID[:], appName)
 
 	peers, err := tf.RequestPeers(peerID, uint16(49160))

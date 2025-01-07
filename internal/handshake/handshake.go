@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/sauromates/leech/internal/utils"
+	"github.com/sauromates/leech/internal/bthash"
 )
 
 const pstr string = "BitTorrent protocol"
@@ -13,17 +13,17 @@ const pstr string = "BitTorrent protocol"
 // Handshake represents a message exchanged between peers over TCP connection
 type Handshake struct {
 	PSTR     string
-	InfoHash utils.BTString
-	PeerID   utils.BTString
+	InfoHash bthash.Hash
+	PeerID   bthash.Hash
 }
 
 // Create creates a new handshake message to connect with peers
-func Create(infoHash, peerID utils.BTString) *Handshake {
+func Create(infoHash, peerID bthash.Hash) *Handshake {
 	return &Handshake{pstr, infoHash, peerID}
 }
 
 // Read reads received handshake message to a struct
-func Read(r io.Reader, expectedHash utils.BTString) (*Handshake, error) {
+func Read(r io.Reader, expectedHash bthash.Hash) (*Handshake, error) {
 	lenBuf := make([]byte, 1)
 	if _, err := io.ReadFull(r, lenBuf); err != nil {
 		return nil, err
@@ -40,7 +40,7 @@ func Read(r io.Reader, expectedHash utils.BTString) (*Handshake, error) {
 	}
 
 	pstr := string(payload[0:pstrLen])
-	var infoHash, peerID utils.BTString
+	var infoHash, peerID bthash.Hash
 
 	infoHashStart, infoHashEnd := pstrLen+8, pstrLen+8+20
 

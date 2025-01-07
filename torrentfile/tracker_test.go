@@ -6,16 +6,16 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/sauromates/leech/internal/bthash"
 	"github.com/sauromates/leech/internal/peers"
-	"github.com/sauromates/leech/internal/utils"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestBuildTrackerURL(t *testing.T) {
 	torrent := TorrentFile{
 		Announce: "http://bttracker.debian.org:6969/announce",
-		InfoHash: utils.BTString{216, 247, 57, 206, 195, 40, 149, 108, 204, 91, 191, 31, 134, 217, 253, 207, 219, 168, 206, 182},
-		PieceHashes: []utils.BTString{
+		InfoHash: bthash.Hash{216, 247, 57, 206, 195, 40, 149, 108, 204, 91, 191, 31, 134, 217, 253, 207, 219, 168, 206, 182},
+		PieceHashes: []bthash.Hash{
 			{49, 50, 51, 52, 53, 54, 55, 56, 57, 48, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106},
 			{97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 49, 50, 51, 52, 53, 54, 55, 56, 57, 48},
 		},
@@ -23,7 +23,7 @@ func TestBuildTrackerURL(t *testing.T) {
 		Length:      getPointer(351272960),
 		Name:        "debian-10.2.0-amd64-netinst.iso",
 	}
-	peerID := utils.BTString{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20}
+	peerID := bthash.Hash{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20}
 	const port uint16 = 6882
 
 	url, err := torrent.BuildTrackerURL(peerID, port)
@@ -55,8 +55,8 @@ func TestRequestPeers(t *testing.T) {
 
 	tf := TorrentFile{
 		Announce: server.URL,
-		InfoHash: utils.BTString{216, 247, 57, 206, 195, 40, 149, 108, 204, 91, 191, 31, 134, 217, 253, 207, 219, 168, 206, 182},
-		PieceHashes: []utils.BTString{
+		InfoHash: bthash.Hash{216, 247, 57, 206, 195, 40, 149, 108, 204, 91, 191, 31, 134, 217, 253, 207, 219, 168, 206, 182},
+		PieceHashes: []bthash.Hash{
 			{49, 50, 51, 52, 53, 54, 55, 56, 57, 48, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106},
 			{97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 49, 50, 51, 52, 53, 54, 55, 56, 57, 48},
 		},
@@ -65,7 +65,7 @@ func TestRequestPeers(t *testing.T) {
 		Name:        "debian-10.2.0-amd64-netinst.iso",
 	}
 
-	peerID := utils.BTString{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20}
+	peerID := bthash.Hash{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20}
 	const port uint16 = 6882
 
 	expected := []peers.Peer{

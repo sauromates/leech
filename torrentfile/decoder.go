@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/jackpal/bencode-go"
+	"github.com/sauromates/leech/internal/bthash"
 	"github.com/sauromates/leech/internal/utils"
 )
 
@@ -55,7 +56,7 @@ func DecodeTorrentFile(reader io.Reader) (*bencodeTorrent, error) {
 }
 
 // Hashes whole torrent info via sha1.
-func (info *bencodeInfo) hash() (utils.BTString, error) {
+func (info *bencodeInfo) hash() (bthash.Hash, error) {
 	var buffer bytes.Buffer
 	var hashableInfo interface{}
 
@@ -76,7 +77,7 @@ func (info *bencodeInfo) hash() (utils.BTString, error) {
 	}
 
 	if err := bencode.Marshal(&buffer, hashableInfo); err != nil {
-		return utils.BTString{}, err
+		return bthash.Hash{}, err
 	}
 
 	return sha1.Sum(buffer.Bytes()), nil
@@ -84,7 +85,7 @@ func (info *bencodeInfo) hash() (utils.BTString, error) {
 
 // Creates a hash for each parsed piece and wraps them all in a slice
 // resulting in infohash used to uniquely identify file
-func (info *bencodeInfo) hashPieces() ([]utils.BTString, error) {
+func (info *bencodeInfo) hashPieces() ([]bthash.Hash, error) {
 	buffer, hashLen := []byte(info.Pieces), 20
 
 	if len(buffer)%hashLen != 0 {
@@ -93,7 +94,7 @@ func (info *bencodeInfo) hashPieces() ([]utils.BTString, error) {
 
 	// Calculate how many pieces there are by splitting the whole string by 20 bytes
 	hashCount := len(buffer) / hashLen
-	hashes := make([]utils.BTString, hashCount)
+	hashes := make([]bthash.Hash, hashCount)
 
 	// Iterate over each 20 byte chunk and put it into the slice of hashes
 	for i := 0; i < hashCount; i++ {
