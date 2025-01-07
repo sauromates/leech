@@ -21,6 +21,10 @@ type MagnetLink struct {
 	TrackerURL string      `qs:"tr,opt"`
 }
 
+// Check determines whether the given string is a parsable magnet link
+// by trying to unmarshal it via [Unmarshal].
+func Check(s string) bool { return Unmarshal(s, &MagnetLink{}) == nil }
+
 // Unmarshal parses magnet link into a struct using [qs.UnmarshalValues] with
 // some additional logic (i.e. retrieving info hash from complex string).
 func Unmarshal(link string, target any) error {
