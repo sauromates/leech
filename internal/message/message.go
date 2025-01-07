@@ -1,3 +1,4 @@
+// Package message enables exchange of BitTorrent messages.
 package message
 
 import (
@@ -8,15 +9,16 @@ import (
 )
 
 const (
-	Choke         uint8 = 0 // Chokes the receiver
-	Unchoke       uint8 = 1 // Unchokes the receiver
-	Interested    uint8 = 2 // Expresses interest in receiving data
-	NotInterested uint8 = 3 // Expresses disinterest in receiving data
-	Have          uint8 = 4 // Alerts the receiver that the sender has downloaded a piece
-	BitField      uint8 = 5 // Encodes which pieces the sender has downloaded
-	Request       uint8 = 6 // Requests a block of data from the receiver
-	Piece         uint8 = 7 // Delivers a block of data to fulfill a request
-	Cancel        uint8 = 8 // Cancels a request
+	Choke         uint8 = 0  // Chokes the receiver
+	Unchoke       uint8 = 1  // Unchokes the receiver
+	Interested    uint8 = 2  // Expresses interest in receiving data
+	NotInterested uint8 = 3  // Expresses disinterest in receiving data
+	Have          uint8 = 4  // Alerts the receiver that the sender has downloaded a piece
+	BitField      uint8 = 5  // Encodes which pieces the sender has downloaded
+	Request       uint8 = 6  // Requests a block of data from the receiver
+	Piece         uint8 = 7  // Delivers a block of data to fulfill a request
+	Cancel        uint8 = 8  // Cancels a request
+	Extended      uint8 = 20 // Notifies about support of extensions
 )
 
 var (
@@ -100,6 +102,8 @@ func (msg *Message) Name() string {
 		return "Piece"
 	case Cancel:
 		return "Cancel"
+	case Extended:
+		return "Extended"
 	default:
 		return fmt.Sprintf("Unknown#%d", msg.ID)
 	}
