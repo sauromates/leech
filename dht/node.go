@@ -3,7 +3,7 @@ package dht
 import (
 	"net"
 
-	"github.com/sauromates/leech/internal/utils"
+	"github.com/sauromates/leech/internal/bthash"
 )
 
 const (
@@ -18,13 +18,13 @@ const (
 // Node is a client/server listening on a UDP port and implementing
 // the DHT protocol.
 type Node struct {
-	ID       utils.BTString
+	ID       bthash.Hash
 	Distance int64
 	Status   int
 	Conn     net.Conn
 }
 
 // NewNode creates a node without opening a connection.
-func NewNode(ID utils.BTString, distance, status int) Node {
+func NewNode(ID bthash.Hash, distance, status int) Node {
 	return Node{ID, int64(distance), status, nil}
 }

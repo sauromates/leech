@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sauromates/leech/internal/bthash"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -39,10 +40,10 @@ func TestSort(t *testing.T) {
 	// Create a new bucket with nodes in random order
 	bucket := NewMaxRangeBucket()
 	bucket.Nodes = append(bucket.Nodes,
-		NewNode(randID(t), 0, NodeStatusGood),         // 0
-		NewNode(randID(t), 0, NodeStatusBad),          // 2
-		NewNode(randID(t), 0, NodeStatusQuestionable), // 1
-		NewNode(randID(t), 0, NodeStatusGood),         // 0
+		NewNode(bthash.NewRandom(), 0, NodeStatusGood),         // 0
+		NewNode(bthash.NewRandom(), 0, NodeStatusBad),          // 2
+		NewNode(bthash.NewRandom(), 0, NodeStatusQuestionable), // 1
+		NewNode(bthash.NewRandom(), 0, NodeStatusGood),         // 0
 	)
 
 	bucket.Sort()
@@ -65,14 +66,14 @@ func TestIsFull(t *testing.T) {
 	tt := map[string]testCase{
 		"full bucket": {
 			nodes: []Node{
-				NewNode(randID(t), 0, NodeStatusGood),
-				NewNode(randID(t), 0, NodeStatusGood),
-				NewNode(randID(t), 0, NodeStatusGood),
-				NewNode(randID(t), 0, NodeStatusGood),
-				NewNode(randID(t), 0, NodeStatusGood),
-				NewNode(randID(t), 0, NodeStatusGood),
-				NewNode(randID(t), 0, NodeStatusGood),
-				NewNode(randID(t), 0, NodeStatusGood),
+				NewNode(bthash.NewRandom(), 0, NodeStatusGood),
+				NewNode(bthash.NewRandom(), 0, NodeStatusGood),
+				NewNode(bthash.NewRandom(), 0, NodeStatusGood),
+				NewNode(bthash.NewRandom(), 0, NodeStatusGood),
+				NewNode(bthash.NewRandom(), 0, NodeStatusGood),
+				NewNode(bthash.NewRandom(), 0, NodeStatusGood),
+				NewNode(bthash.NewRandom(), 0, NodeStatusGood),
+				NewNode(bthash.NewRandom(), 0, NodeStatusGood),
 			},
 			isFull: true,
 		},

@@ -3,11 +3,12 @@ package dht
 import (
 	"testing"
 
+	"github.com/sauromates/leech/internal/bthash"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestNewNode(t *testing.T) {
-	id, distance := randID(t), 0
+	id, distance := bthash.NewRandom(), 0
 	node := NewNode(id, distance, NodeStatusGood)
 
 	assert.Equal(t, id, node.ID)
