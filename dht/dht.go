@@ -6,7 +6,12 @@ package dht
 import (
 	"math/big"
 	"time"
+
+	"github.com/sauromates/leech/internal/metadata"
+	"github.com/sauromates/leech/internal/peers"
 )
+
+const bootstrapURL string = "router.utorrent.com:6881"
 
 // now holds reference to [time.Now] function which can be used both in code
 // and tests (we can stub it with any func returning time).
@@ -23,6 +28,14 @@ func NewRoutingTable() *RoutingTable {
 	return &RoutingTable{
 		Buckets: []Bucket{*NewMaxRangeBucket()},
 	}
+}
+
+func FindMetadata() (*metadata.Metadata, error) {
+	return &metadata.Metadata{}, nil
+}
+
+func FindPeers(pool chan *peers.Peer) {
+	//
 }
 
 // Insert attempts to put new [Node] to routing table. It will do so by
