@@ -12,6 +12,9 @@ import (
 	"github.com/pasztorpisti/qs"
 )
 
+// Length is a default length of BitTorrent hash strings/arrays.
+const Length int = 20
+
 // ErrEmptyHash is returned when either string can't be decoded into [Hash]
 // or decoded string is not of length 20 (which is required for [20]byte) hash.
 var ErrEmptyHash error = errors.New("[ERROR] Decoding error, hash is empty")
@@ -76,11 +79,14 @@ func (bth Hash) MarshalQS(opts *qs.MarshalOptions) ([]string, error) {
 		return []string{}, ErrEmptyHash
 	}
 
-	return []string{bth.String()}, nil
+	return []string{string(bth[:])}, nil
 }
 
 // String returns hexadecimal encoded BitTorrent hash. Empty hash produces
 // empty string instead of 20 zeroes.
+//
+// Note that this value is not escaped and can't be used directly as URL query
+// parameter. Use [qs.Marshal] for this purpose.
 func (bth Hash) String() string {
 	if bth == (Hash{}) {
 		return ""

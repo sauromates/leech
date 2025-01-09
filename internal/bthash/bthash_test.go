@@ -129,7 +129,7 @@ func TestMarshalQS(t *testing.T) {
 			hash: map[string]Hash{
 				"a": {0x99, 0x86, 0x01, 0xFA, 0x7B, 0x56, 0x8A, 0xBD, 0xE1, 0x38, 0x49, 0x8D, 0x12, 0xAB, 0xA4, 0x1C, 0x1E, 0x0C, 0xB8, 0x93},
 			},
-			query:      "a=998601FA7B568ABDE138498D12ABA41C1E0CB893",
+			query:      "a=%99%86%01%FA%7BV%8A%BD%E18I%8D%12%AB%A4%1C%1E%0C%B8%93",
 			shouldFail: false,
 		},
 		"empty hash": {
