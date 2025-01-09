@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"crypto/sha1"
 	"fmt"
-	_ "io"
+	"io"
 
 	"github.com/sauromates/leech/client"
 	"github.com/sauromates/leech/internal/bthash"
@@ -124,4 +124,13 @@ func (c *PieceContent) Read(b []byte) (n int, err error) {
 // ReadAt calls underlying [*bytes.Reader] to read piece contents from offset
 func (c *PieceContent) ReadAt(b []byte, off int64) (n int, err error) {
 	return c.reader().ReadAt(b, off)
+}
+
+// Save copies piece contents with bounds `[begin:end]` to a given writer.
+//
+// Internally it utilizes [io.SectionReader] and underlying [bytes.Reader] to
+// transfer a slice of piece's content to given writer. Writer could be
+// anything (i.e. file, buffer, etc.).
+func (p *PieceContent) Save(w io.Writer, begin, end int64) (int64, error) {
+	return io.Copy(w, io.NewSectionReader(p, begin, end))
 }
