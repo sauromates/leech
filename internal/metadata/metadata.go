@@ -78,22 +78,30 @@ func (i *Info) Hash() (bthash.Hash, error) {
 	return sha1.Sum(buf.Bytes()), nil
 }
 
-// HashPieces splits raw `pieces` string from torrent's metadata into a slice
-// of [20]byte hashes.
-func (i *Info) HashPieces() ([]bthash.Hash, error) {
-	pieces := []byte(i.Pieces)
+// hashPieces splits raw `pieces` string from torrent's metadata into a slice
+// of [20]byte hashes and transforms each into [piece.Piece] struct.
+func (i *info) hashPieces() ([]piece.Piece, error) {
+	buf := []byte(i.Pieces)
 
-	if len(pieces)%bthash.Length != 0 {
-		return nil, fmt.Errorf("malformed pieces of length %d", len(pieces))
+	if len(buf)%bthash.Length != 0 {
+		return nil, fmt.Errorf("malformed pieces of length %d", len(buf))
 	}
 
-	hashes := make([]bthash.Hash, len(pieces)/bthash.Length)
-	for i := range len(hashes) {
-		offset, end := i*bthash.Length, (i+1)*bthash.Length
-		copy(hashes[i][:], pieces[offset:end])
+	pieces := make([]piece.Piece, len(buf)/bthash.Length)
+	for j := range len(pieces) {
+		chunkOffset, chunkEnd := j*bthash.Length, (j+1)*bthash.Length
+		pieceOffset, pieceEnd := piece.Bounds(j, i.PieceLength, i.getLength())
+
+		pieces[j] = piece.Piece{
+			Index:   j,
+			Hash:    bthash.New(buf[chunkOffset:chunkEnd]),
+			Offset:  int64(pieceOffset),
+			End:     int64(pieceEnd),
+			Content: make([]byte, pieceEnd-pieceOffset),
+		}
 	}
 
-	return hashes, nil
+	return pieces, nil
 }
 
 // MapFiles transforms each [File] in torrent's metadata into [utils.PathInfo]
