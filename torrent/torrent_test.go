@@ -211,7 +211,7 @@ func fakeTorrent(pieceLength, torrentLength int, files []utils.PathInfo) Torrent
 		InfoHash:     bthash.NewRandom(),
 		Pieces:       pieces,
 		Files:        files,
-		Client:       peers.NewFromHost(6881),
+		Client:       peers.NewFromHost(bthash.NewRandom(), 6881),
 		Peers:        pool,
 		DownloadPath: "",
 	}
