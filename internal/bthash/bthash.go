@@ -29,21 +29,35 @@ var randomizer io.Reader = rand.Reader
 // enabling its use for parsing and serializing magnet links.
 type Hash [20]byte
 
-// NewFromString decodes hexadecimal string value into a [20]byte array.
-// Any errors would lead to empty [Hash] returned.
-func NewFromString(s string) Hash {
-	b, err := hex.DecodeString(s)
-	if err != nil || len(b) != 20 {
+// New attempts to copy given bytes to [20]byte array. It returns empty [Hash]
+// if length is invalid.
+func New(b []byte) Hash {
+	if len(b) != 20 {
 		return Hash{}
 	}
 
-	var bth Hash
+	var bth [20]byte
 	copy(bth[:], b)
 
 	return bth
 }
 
-// NewRandom creates [20]byte hash via randomizer which is set at package level.
+// NewFromString converts incoming string into bytes slice and creates
+// new [Hash] via [New].
+func NewFromString(s string) Hash { return New([]byte(s)) }
+
+// NewFromHEX decodes hexadecimal string value into a [20]byte array.
+// Any errors would lead to empty [Hash] returned.
+func NewFromHEX(s string) Hash {
+	b, err := hex.DecodeString(s)
+	if err != nil {
+		return Hash{}
+	}
+
+	return New(b)
+}
+
+// NewRandom creates [20]byte hash via randomizer set at the package level.
 //
 // Return value is an empty hash if the randomizer fails with error.
 func NewRandom() Hash {
@@ -63,7 +77,7 @@ func (bth *Hash) UnmarshalQS(a []string, opts *qs.UnmarshalOptions) error {
 		return err
 	}
 
-	*bth = NewFromString(s)
+	*bth = NewFromHEX(s)
 
 	if *bth == (Hash{}) {
 		return ErrEmptyHash
@@ -82,15 +96,18 @@ func (bth Hash) MarshalQS(opts *qs.MarshalOptions) ([]string, error) {
 	return []string{string(bth[:])}, nil
 }
 
-// String returns hexadecimal encoded BitTorrent hash. Empty hash produces
+// ToHEX returns hexadecimal encoded BitTorrent hash. Empty hash produces
 // empty string instead of 20 zeroes.
 //
 // Note that this value is not escaped and can't be used directly as URL query
 // parameter. Use [qs.Marshal] for this purpose.
-func (bth Hash) String() string {
+func (bth Hash) ToHEX() string {
 	if bth == (Hash{}) {
 		return ""
 	}
 
 	return strings.ToUpper(hex.EncodeToString(bth[:]))
 }
+
+// String converts [20]byte array to string.
+func (bth Hash) String() string { return string(bth[:]) }

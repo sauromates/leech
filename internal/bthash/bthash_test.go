@@ -9,7 +9,7 @@ import (
 	"github.com/pasztorpisti/qs"
 )
 
-func TestNewFromString(t *testing.T) {
+func TestNewFromHEX(t *testing.T) {
 	type testCase struct {
 		input    string
 		expected Hash
@@ -32,7 +32,7 @@ func TestNewFromString(t *testing.T) {
 
 	for name, tc := range tt {
 		t.Run(name, func(t *testing.T) {
-			hash := NewFromString(tc.input)
+			hash := NewFromHEX(tc.input)
 			if hash != tc.expected {
 				t.Errorf("%s:\nexpected %s\ngot %d", name, tc.expected, hash)
 			}
@@ -156,7 +156,7 @@ func TestMarshalQS(t *testing.T) {
 	}
 }
 
-func TestString(t *testing.T) {
+func TestToHEX(t *testing.T) {
 	type testCase struct {
 		hash     Hash
 		expected string
@@ -175,7 +175,7 @@ func TestString(t *testing.T) {
 
 	for name, tc := range tt {
 		t.Run(name, func(t *testing.T) {
-			s := tc.hash.String()
+			s := tc.hash.ToHEX()
 			if s != tc.expected {
 				t.Errorf("%s\nexpected: %s\ngot: %s", name, tc.expected, s)
 			}
