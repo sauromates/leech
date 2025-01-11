@@ -1,13 +1,16 @@
+// Package worker is responsible for actual download process.
+//
+// It is designed to be used in non-blocking manner.
 package worker
 
 import (
 	"errors"
 	"log"
-	"time"
 
 	"github.com/sauromates/leech/client"
 	"github.com/sauromates/leech/internal/bthash"
 	"github.com/sauromates/leech/internal/peers"
+	"github.com/sauromates/leech/internal/piece"
 )
 
 // Returned upon rejected or timed out connection with a peer
@@ -21,8 +24,8 @@ type Worker struct {
 	clientID bthash.Hash
 }
 
-// Create creates new connection for a peer and puts it into new worker instance
-func Create(peer peers.Peer, infoHash, peerID bthash.Hash) *Worker {
+// New creates new connection for a peer and puts it into new worker instance
+func New(peer peers.Peer, infoHash, peerID bthash.Hash) *Worker {
 	return &Worker{peer, nil, infoHash, peerID}
 }
 
@@ -41,7 +44,7 @@ func (w *Worker) Connect() error {
 }
 
 // Run starts listening to a task queue until it's empty or until a download error occurs
-func (w *Worker) Run(queue chan *Piece, results chan *PieceContent) error {
+func (w *Worker) Run(queue, results chan *piece.Piece) error {
 	if err := w.Connect(); err != nil {
 		return err
 	}
@@ -57,15 +60,15 @@ func (w *Worker) Run(queue chan *Piece, results chan *PieceContent) error {
 			continue
 		}
 
-		content, err := w.downloadPiece(piece)
-		if err != nil {
+		pipeline := NewPipeline(w.client, piece)
+		if err := pipeline.Run(); err != nil {
 			log.Printf("[ERROR] Download failed: %s", err)
 			queue <- piece
 
 			return err
 		}
 
-		if err := piece.verifyHashSum(content); err != nil {
+		if err := piece.VerifyHash(); err != nil {
 			log.Printf("[ERROR] Invalid piece: %s", err)
 			queue <- piece
 
@@ -73,44 +76,8 @@ func (w *Worker) Run(queue chan *Piece, results chan *PieceContent) error {
 		}
 
 		w.client.ConfirmHavePiece(piece.Index)
-		results <- &PieceContent{piece.Index, content}
+		results <- piece
 	}
 
 	return nil
-}
-
-// downloadPiece attempts to process given task by requesting pieces in a
-// sequential pipeline
-func (w *Worker) downloadPiece(piece *Piece) ([]byte, error) {
-	pipeline := Pipeline{
-		Index:   piece.Index,
-		Client:  w.client,
-		Content: make([]byte, piece.Length),
-	}
-
-	// Setting a deadline helps get unresponsive peers unstuck.
-	// 30 seconds is more than enough time to download a 262 KB piece
-	w.client.Conn.SetDeadline(time.Now().Add(30 * time.Second))
-	defer w.client.Conn.SetDeadline(time.Time{})
-
-	for pipeline.Downloaded < piece.Length {
-		if !pipeline.Client.IsChoked {
-			for pipeline.hasBacklogSpace(piece.Length) {
-				blockSize := pipeline.blockSize(piece.Length)
-
-				if err := w.client.RequestPiece(piece.Index, pipeline.Requested, blockSize); err != nil {
-					return nil, err
-				}
-
-				pipeline.Backlog++
-				pipeline.Requested += blockSize
-			}
-		}
-
-		if err := pipeline.ReadMessage(); err != nil {
-			return nil, err
-		}
-	}
-
-	return pipeline.Content, nil
 }
