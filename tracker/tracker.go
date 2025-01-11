@@ -38,6 +38,19 @@ type TrackerResponse struct {
 	Failure  string `bencode:"failure reason" qs:"failure reason"`
 }
 
+func New(url string, hash bthash.Hash, client *peers.Peer, length int) *Tracker {
+	return &Tracker{
+		Announce:   url,
+		InfoHash:   hash,
+		PeerID:     client.ID,
+		Port:       client.Port,
+		Uploaded:   0,
+		Downloaded: 0,
+		Compact:    1,
+		Left:       length,
+	}
+}
+
 // FindPeers requests tracker for peers information and sends unmarshaled
 // values to a given channel.
 //
