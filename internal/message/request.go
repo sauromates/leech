@@ -3,6 +3,8 @@ package message
 import (
 	"encoding/binary"
 	"fmt"
+
+	"github.com/sauromates/leech/internal/piece"
 )
 
 // CreateRequest creates a message with code 6 `request`
@@ -16,8 +18,8 @@ func CreateRequest(index, begin, length int) *Message {
 	return &Message{ID: Request, Payload: payload}
 }
 
-// ParsePiece verifies incoming message and returns length of downloaded piece
-func (msg *Message) ParsePiece(index int, content []byte) (int, error) {
+// ParsePiece decodes [Piece] message and writes it into given [*piece.Piece].
+func (msg *Message) ParsePiece(p *piece.Piece) (int, error) {
 	if msg.ID != Piece {
 		return 0, fmt.Errorf("unexpected message code %d", msg.ID)
 	}
@@ -27,21 +29,19 @@ func (msg *Message) ParsePiece(index int, content []byte) (int, error) {
 	}
 
 	msgIndex := int(binary.BigEndian.Uint32(msg.Payload[0:4]))
-	if msgIndex != index {
-		return 0, fmt.Errorf("piece index mismatch: expected %d but got %d", index, msgIndex)
+	if msgIndex != p.Index {
+		return 0, fmt.Errorf("piece index mismatch: expected %d but got %d", p.Index, msgIndex)
 	}
 
 	begin := int(binary.BigEndian.Uint32(msg.Payload[4:8]))
-	if begin >= len(content) {
-		return 0, fmt.Errorf("initial offset is larger than expected (%d over %d)", begin, len(content))
+	if begin >= p.Size() {
+		return 0, fmt.Errorf("initial offset is larger than expected (%d over %d)", begin, p.Size())
 	}
 
 	payload := msg.Payload[8:]
-	if begin+len(payload) > len(content) {
-		return 0, fmt.Errorf("invalid payload length (%d for offset %d with length %d)", len(payload), begin, len(content))
+	if begin+len(payload) > p.Size() {
+		return 0, fmt.Errorf("invalid payload length (%d for offset %d with length %d)", len(payload), begin, p.Size())
 	}
 
-	copy(content[begin:], payload)
-
-	return len(payload), nil
+	return p.WriteAt(payload, int64(begin))
 }

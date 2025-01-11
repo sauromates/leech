@@ -1,51 +1,21 @@
 package torrent
 
 import (
-	"crypto/rand"
+	"math"
 	"os"
 	"testing"
 
+	"github.com/sauromates/leech/internal/bthash"
 	"github.com/sauromates/leech/internal/peers"
+	"github.com/sauromates/leech/internal/piece"
 	"github.com/sauromates/leech/internal/utils"
-	"github.com/sauromates/leech/worker"
 	"github.com/stretchr/testify/assert"
 )
-
-func TestPieceBounds(t *testing.T) {
-	type testCase struct {
-		torrent    Torrent
-		pieceIndex int
-		begin      int
-		end        int
-	}
-
-	tt := map[string]testCase{
-		"normal piece": {
-			torrent:    fakeTorrent(50, 100, []utils.PathInfo{}),
-			pieceIndex: 0,
-			begin:      0,
-			end:        50,
-		},
-		"last piece": {
-			torrent:    fakeTorrent(13, 100, []utils.PathInfo{}),
-			pieceIndex: 7,
-			begin:      91,
-			end:        100,
-		},
-	}
-
-	for _, tc := range tt {
-		begin, end := tc.torrent.pieceBounds(tc.pieceIndex)
-
-		assert.Equal(t, tc.begin, begin)
-		assert.Equal(t, tc.end, end)
-	}
-}
 
 func TestWhichFiles(t *testing.T) {
 	type testCase struct {
 		torrent       Torrent
-		expectedFiles []map[string]utils.FileMap
+		expectedFiles [][]utils.FileMap
 		shouldFail    bool
 	}
 
@@ -55,12 +25,12 @@ func TestWhichFiles(t *testing.T) {
 				{Path: "test1", Offset: 0, Length: 50},
 				{Path: "test2", Offset: 50, Length: 100},
 			}),
-			expectedFiles: []map[string]utils.FileMap{
+			expectedFiles: [][]utils.FileMap{
 				{
-					"test1": {FileName: "test1", FileOffset: 0, PieceStart: 0, PieceEnd: 50},
+					{Path: "test1", Offset: 0, PieceStart: 0, PieceEnd: 50},
 				},
 				{
-					"test2": {FileName: "test2", FileOffset: 0, PieceStart: 0, PieceEnd: 50},
+					{Path: "test2", Offset: 0, PieceStart: 0, PieceEnd: 50},
 				},
 			},
 			shouldFail: false,
@@ -71,16 +41,16 @@ func TestWhichFiles(t *testing.T) {
 				{Path: "test1", Offset: 50, Length: 80},  // 1: [0:30] (size 30)
 				{Path: "test2", Offset: 80, Length: 100}, // 2: [0:20] (size 20)
 			}),
-			expectedFiles: []map[string]utils.FileMap{
+			expectedFiles: [][]utils.FileMap{
 				{
-					"test0": {FileName: "test0", FileOffset: 0, PieceStart: 0, PieceEnd: 40},
+					{Path: "test0", Offset: 0, PieceStart: 0, PieceEnd: 40},
 				},
 				{
-					"test0": {FileName: "test0", FileOffset: 40, PieceStart: 0, PieceEnd: 10},
-					"test1": {FileName: "test1", FileOffset: 0, PieceStart: 10, PieceEnd: 40},
+					{Path: "test0", Offset: 40, PieceStart: 0, PieceEnd: 10},
+					{Path: "test1", Offset: 0, PieceStart: 10, PieceEnd: 40},
 				},
 				{
-					"test2": {FileName: "test2", FileOffset: 0, PieceStart: 0, PieceEnd: 20},
+					{Path: "test2", Offset: 0, PieceStart: 0, PieceEnd: 20},
 				},
 			},
 			shouldFail: false,
@@ -92,15 +62,15 @@ func TestWhichFiles(t *testing.T) {
 				{Path: "test2", Offset: 10, Length: 40},
 				{Path: "test3", Offset: 40, Length: 100},
 			}),
-			expectedFiles: []map[string]utils.FileMap{
+			expectedFiles: [][]utils.FileMap{
 				{
-					"test0": {FileName: "test0", FileOffset: 0, PieceStart: 0, PieceEnd: 5},
-					"test1": {FileName: "test1", FileOffset: 0, PieceStart: 5, PieceEnd: 10},
-					"test2": {FileName: "test2", FileOffset: 0, PieceStart: 10, PieceEnd: 40},
-					"test3": {FileName: "test3", FileOffset: 0, PieceStart: 40, PieceEnd: 60},
+					{Path: "test0", Offset: 0, PieceStart: 0, PieceEnd: 5},
+					{Path: "test1", Offset: 0, PieceStart: 5, PieceEnd: 10},
+					{Path: "test2", Offset: 0, PieceStart: 10, PieceEnd: 40},
+					{Path: "test3", Offset: 0, PieceStart: 40, PieceEnd: 60},
 				},
 				{
-					"test3": {FileName: "test3", FileOffset: 20, PieceStart: 0, PieceEnd: 40},
+					{Path: "test3", Offset: 20, PieceStart: 0, PieceEnd: 40},
 				},
 			},
 			shouldFail: false,
@@ -108,7 +78,7 @@ func TestWhichFiles(t *testing.T) {
 	}
 
 	for _, tc := range tt {
-		for i := range len(tc.expectedFiles) {
+		for i := range len(tc.torrent.Pieces) {
 			files, err := tc.torrent.whichFiles(i)
 			if tc.shouldFail {
 				assert.NotNil(t, err)
@@ -121,9 +91,9 @@ func TestWhichFiles(t *testing.T) {
 	}
 }
 
-func TestWrite(t *testing.T) {
+func TestSavePiece(t *testing.T) {
 	type expectation struct {
-		piece *worker.PieceContent
+		piece *piece.Piece
 		files []utils.PathInfo
 	}
 	type testCase struct {
@@ -141,13 +111,13 @@ func TestWrite(t *testing.T) {
 			}),
 			pieces: []expectation{
 				{
-					piece: &worker.PieceContent{Index: 0, Content: make([]byte, 50)},
+					piece: &piece.Piece{Index: 0, Content: make([]byte, 50)},
 					files: []utils.PathInfo{
 						{Path: "test0", Offset: 0, Length: 50},
 					},
 				},
 				{
-					piece: &worker.PieceContent{Index: 1, Content: make([]byte, 50)},
+					piece: &piece.Piece{Index: 1, Content: make([]byte, 50)},
 					files: []utils.PathInfo{
 						{Path: "test1", Offset: 0, Length: 50},
 					},
@@ -164,20 +134,20 @@ func TestWrite(t *testing.T) {
 			}),
 			pieces: []expectation{
 				{
-					piece: &worker.PieceContent{Index: 0, Content: make([]byte, 40)},
+					piece: &piece.Piece{Index: 0, Content: make([]byte, 40)},
 					files: []utils.PathInfo{
 						{Path: "test0", Offset: 0, Length: 40},
 					},
 				},
 				{
-					piece: &worker.PieceContent{Index: 1, Content: make([]byte, 40)},
+					piece: &piece.Piece{Index: 1, Content: make([]byte, 40)},
 					files: []utils.PathInfo{
 						{Path: "test0", Offset: 40, Length: 50},
 						{Path: "test1", Offset: 0, Length: 30},
 					},
 				},
 				{
-					piece: &worker.PieceContent{Index: 2, Content: make([]byte, 20)},
+					piece: &piece.Piece{Index: 2, Content: make([]byte, 20)},
 					files: []utils.PathInfo{
 						{Path: "test2", Offset: 0, Length: 20},
 					},
@@ -191,18 +161,21 @@ func TestWrite(t *testing.T) {
 	for name, tc := range tt {
 		fileSizes := make(map[string]int64, 3)
 		for _, expectation := range tc.pieces {
-			_, err := tc.torrent.write(expectation.piece, nil)
+			_, err := tc.torrent.savePiece(expectation.piece)
 			if tc.shouldFail {
-				assert.NotNil(t, err)
+				assert.Error(t, err)
 			} else {
-				assert.Nil(t, err)
+				assert.NoError(t, err)
 			}
 
 			for _, file := range expectation.files {
 				actualFile, err := os.Stat(file.Path)
+				if err != nil {
+					assert.Fail(t, err.Error())
+				}
+
 				fileSizes[file.Path] = actualFile.Size()
 
-				assert.Nil(t, err)
 				assert.Equal(t, file.Length, int(actualFile.Size()), name+" case, file "+file.Path)
 
 				os.Remove(file.Path)
@@ -218,19 +191,28 @@ func TestWrite(t *testing.T) {
 	}
 }
 
-func fakeTorrent(pieceLength, torrentLength int, paths []utils.PathInfo) Torrent {
-	var randPeerID, randInfoHash utils.BTString
-	rand.Read(randPeerID[:])
-	rand.Read(randInfoHash[:])
+// fakeTorrent generates [Torrent] with given parameters.
+func fakeTorrent(pieceLength, torrentLength int, files []utils.PathInfo) Torrent {
+	pool := make(chan *peers.Peer)
+
+	// Go rounds integers down therefore we need to explicitly convert each
+	// value to float64 first and then round division up
+	// e.g. 100/40 = 2, math.Ceil(float64(100)/float64(40)) = 3
+	pieceCount := math.Ceil(float64(torrentLength) / float64(pieceLength))
+	pieces := make([]piece.Piece, int(pieceCount))
+	for i := range int(pieceCount) {
+		offset, end := piece.Bounds(i, pieceLength, torrentLength)
+		pieces[i] = *piece.New(i, bthash.NewRandom(), int64(offset), int64(end))
+	}
 
 	return Torrent{
-		Peers:       []peers.Peer{},
-		PeerID:      randPeerID,
-		InfoHash:    randInfoHash,
-		PieceHashes: []utils.BTString{},
-		PieceLength: pieceLength,
-		Name:        "test",
-		Length:      torrentLength,
-		Files:       paths,
+		Name:         "test",
+		Length:       torrentLength,
+		InfoHash:     bthash.NewRandom(),
+		Pieces:       pieces,
+		Files:        files,
+		Client:       peers.NewFromHost(bthash.NewRandom(), 6881),
+		Peers:        pool,
+		DownloadPath: "",
 	}
 }

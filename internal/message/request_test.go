@@ -3,6 +3,8 @@ package message
 import (
 	"testing"
 
+	"github.com/sauromates/leech/internal/bthash"
+	"github.com/sauromates/leech/internal/piece"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -23,8 +25,7 @@ func TestCreateRequest(t *testing.T) {
 func TestParsePiece(t *testing.T) {
 	type testCase struct {
 		msg           *Message
-		inputIndex    int
-		inputBuf      []byte
+		targetPiece   *piece.Piece
 		outputWritten int
 		outputBuf     []byte
 		shouldFail    bool
@@ -37,16 +38,14 @@ func TestParsePiece(t *testing.T) {
 				0x00, 0x00, 0x00, 0x02, // Begin
 				0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, // Block
 			}},
-			inputIndex:    4,
-			inputBuf:      make([]byte, 10),
+			targetPiece:   piece.New(4, bthash.NewRandom(), 0, 10),
 			outputWritten: 6,
 			outputBuf:     []byte{0x00, 0x00, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x00},
 			shouldFail:    false,
 		},
 		"invalid message type": {
 			msg:           &Message{Choke, []byte{}},
-			inputIndex:    4,
-			inputBuf:      make([]byte, 10),
+			targetPiece:   piece.New(4, bthash.NewRandom(), 0, 10),
 			outputWritten: 0,
 			outputBuf:     make([]byte, 10),
 			shouldFail:    true,
@@ -56,8 +55,7 @@ func TestParsePiece(t *testing.T) {
 				0x00, 0x00, 0x00, 0x04, // Index
 				0x00, 0x00, 0x00, // Malformed offset
 			}},
-			inputIndex:    4,
-			inputBuf:      make([]byte, 10),
+			targetPiece:   piece.New(4, bthash.NewRandom(), 0, 10),
 			outputWritten: 0,
 			outputBuf:     make([]byte, 10),
 			shouldFail:    true,
@@ -68,8 +66,7 @@ func TestParsePiece(t *testing.T) {
 				0x00, 0x00, 0x00, 0x02, // Begin
 				0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, // Block
 			}},
-			inputIndex:    4,
-			inputBuf:      make([]byte, 10),
+			targetPiece:   piece.New(4, bthash.NewRandom(), 0, 10),
 			outputWritten: 0,
 			outputBuf:     make([]byte, 10),
 			shouldFail:    true,
@@ -80,8 +77,7 @@ func TestParsePiece(t *testing.T) {
 				0x00, 0x00, 0x00, 0x0c, // Begin is 12 > 10
 				0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, // Block
 			}},
-			inputIndex:    4,
-			inputBuf:      make([]byte, 10),
+			targetPiece:   piece.New(4, bthash.NewRandom(), 0, 10),
 			outputWritten: 0,
 			outputBuf:     make([]byte, 10),
 			shouldFail:    true,
@@ -93,8 +89,7 @@ func TestParsePiece(t *testing.T) {
 				// Block is 10 long but begin=2; too long for input buffer
 				0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x0a, 0x0b, 0x0c, 0x0d,
 			}},
-			inputIndex:    4,
-			inputBuf:      make([]byte, 10),
+			targetPiece:   piece.New(4, bthash.NewRandom(), 0, 10),
 			outputWritten: 0,
 			outputBuf:     make([]byte, 10),
 			shouldFail:    true,
@@ -102,14 +97,14 @@ func TestParsePiece(t *testing.T) {
 	}
 
 	for _, tc := range tt {
-		written, err := tc.msg.ParsePiece(tc.inputIndex, tc.inputBuf)
+		written, err := tc.msg.ParsePiece(tc.targetPiece)
 		if tc.shouldFail {
 			assert.NotNil(t, err)
 		} else {
 			assert.Nil(t, err)
 		}
 
-		assert.Equal(t, tc.outputBuf, tc.inputBuf)
+		assert.Equal(t, tc.outputBuf, tc.targetPiece.Content)
 		assert.Equal(t, tc.outputWritten, written)
 	}
 }

@@ -1,241 +1,170 @@
 package torrent
 
 import (
-	"errors"
 	"fmt"
-	"io"
-	"log"
-	"path/filepath"
-	"runtime"
-	"time"
 
+	"github.com/sauromates/leech/internal/bthash"
 	"github.com/sauromates/leech/internal/peers"
+	"github.com/sauromates/leech/internal/piece"
 	"github.com/sauromates/leech/internal/utils"
-	"github.com/sauromates/leech/torrentfile"
+	"github.com/sauromates/leech/tracker"
 	"github.com/sauromates/leech/worker"
 	"github.com/schollz/progressbar/v3"
 )
 
-const (
-	appName        string = "leech"
-	maxConnections int    = 10
-)
-
+// Torrent is a central piece of Leech: it holds all necessary information
+// about the target metadata along with download path and client info. It
+// should be created as soon as possible, typically within main().
 type Torrent struct {
-	Peers       []peers.Peer
-	PeerID      utils.BTString
-	InfoHash    utils.BTString
-	PieceHashes []utils.BTString
-	PieceLength int
-	Name        string
-	Length      int
-	Files       []utils.PathInfo
-	DownloadDir string
+	Name         string
+	Length       int
+	InfoHash     bthash.Hash
+	Client       *peers.Peer
+	Pieces       []piece.Piece
+	Files        []utils.PathInfo
+	Peers        chan *peers.Peer
+	Tracker      *tracker.Tracker
+	DownloadPath string
 }
 
-// CreateFromTorrentFile creates new [*Torrent] from decoded torrent file info
-func CreateFromTorrentFile(tf torrentfile.TorrentFile) (*Torrent, error) {
-	var peerID utils.BTString
-	copy(peerID[:], appName)
-
-	peers, err := tf.RequestPeers(peerID, uint16(49160))
+// Download orchestrates main downloading process and tracks its progress.
+//
+// It does so by preparing work queue of pieces to download, results channel
+// to listen to and a progress tracker implementing [io.Writer]. After all
+// preparations torrent would just listen to two channels: results and peers.
+//
+// Each result will be copied to an associated file and for each peer a
+// worker goroutine would be started. Download will listen to mentioned
+// channels until the count of downloaded pieces match total piece count.
+func (t *Torrent) Download() error {
+	queue, err := t.makeQueue()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	torrent := Torrent{
-		Peers:       peers,
-		PeerID:      peerID,
-		InfoHash:    tf.InfoHash,
-		PieceHashes: tf.PieceHashes,
-		PieceLength: tf.PieceLength,
-		Name:        tf.Name,
-		Length:      tf.GetLength(),
-		Files:       tf.GetFiles(),
-	}
+	done, results := 0, make(chan *piece.Piece)
+	bar := progressbar.DefaultBytes(int64(t.Length))
 
-	return &torrent, nil
-}
-
-// Download runs workers asynchronously after preparing necessary infrastructure
-// for them: assembles tasks and results queues, pushes peers into a pool of connections, etc.
-func (torrent *Torrent) Download(dir string) error {
-	torrent.DownloadDir = dir
-
-	queue := make(chan *worker.Piece, len(torrent.PieceHashes))
-	results := make(chan *worker.PieceContent)
-	pool := make(chan *peers.Peer, len(torrent.Peers))
-
-	for index, hash := range torrent.PieceHashes {
-		pieceLength := torrent.pieceSize(index)
-		piece := worker.Piece{Index: index, Hash: hash, Length: pieceLength}
-
-		queue <- &piece
-	}
-
-	for _, peer := range torrent.Peers {
-		pool <- &peer
-	}
-
-	done := make(map[int]bool)
-	tracker := progressbar.DefaultBytes(int64(torrent.Length), "Downloading")
-	for len(done) < len(torrent.PieceHashes) {
+	for done < t.Length {
 		select {
+		// Write each downloaded piece to files
 		case piece := <-results:
-			// Skip if a piece was marked as done. It's very unlikely to
-			// get duplicate piece in select from a channel, however
-			if done[piece.Index] {
-				continue
-			}
-
-			if _, err := torrent.write(piece, tracker); err != nil {
+			saved, err := t.savePiece(piece)
+			if err != nil {
 				return err
 			}
 
-			done[piece.Index] = true
-		case peer := <-pool:
-			log.Printf("[INFO] Received peer %s", peer.String())
-
-			numWorkers := runtime.NumGoroutine() - 1
-			if numWorkers < maxConnections {
-				log.Printf("[INFO] Connecting to %s", peer.String())
-				go torrent.startWorker(*peer, queue, results, pool)
-			} else {
-				log.Printf("[INFO] Too many connections, will retry %s later", peer.String())
-				time.Sleep(time.Second * 3)
-				pool <- peer
-			}
+			done += saved
+			bar.Add(saved)
+		case peer := <-t.Peers:
+			// Run separate goroutine for each new peer
+			go func() {
+				downloader := worker.New(*peer, t.InfoHash, t.Client.ID)
+				err := downloader.Run(queue, results)
+				// Return peer to pool in case of any error except ErrConn
+				if err != nil && err != worker.ErrConn {
+					t.Peers <- peer
+				}
+			}()
 		}
 	}
 
 	close(queue)
 	close(results)
-	close(pool)
 
-	return tracker.Finish()
+	return bar.Finish()
+}
+
+// FindPeers uses tracker requests and/or DHT to populate peers channel with
+// new peers. This function should be called before [Download] to allow the
+// former to process incoming peers.
+//
+// It's important to run it inside a goroutine since populating unbuffered
+// channel would block execution.
+func (t *Torrent) FindPeers() error {
+	// TODO: go dht.FindPeers(t.Peers)
+
+	if err := t.Tracker.FindPeers(t.Peers); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // String converts torrent info to default string representation
 func (t Torrent) String() string {
-	return fmt.Sprintf("Torrent %s\n---\nTotalSize: %.2f MB\nTotalFiles: %d\n",
+	return fmt.Sprintf(
+		"Torrent: %s\n---\nTotal size: %.2f Mb\nTotal files: %d\n",
 		t.Name,
 		float64(t.Length)/(1024*1024),
 		len(t.Files),
 	)
 }
 
-// pieceBounds calculates where the piece with given index begins
-// and ends within the torrent contents
-func (torrent *Torrent) pieceBounds(index int) (begin int, end int) {
-	begin = index * torrent.PieceLength
-	end = begin + torrent.PieceLength
-
-	if end > torrent.Length {
-		end = torrent.Length
-	}
-
-	return begin, end
-}
-
-// pieceSize returns the size of a piece with given index in bytes
-func (torrent *Torrent) pieceSize(index int) int {
-	begin, end := torrent.pieceBounds(index)
-
-	return end - begin
-}
-
-// write copies received piece into associated files.
-//
-// Base scenario is writing to a single file, but pieces may overlap files,
-// in which case we will split piece by relative offset and length and write
-// its parts to multiple associated files
-func (torrent *Torrent) write(piece *worker.PieceContent, tracker io.Writer) (n int, err error) {
-	files, err := torrent.whichFiles(piece.Index)
+// savePiece searches files associated with given piece and passes them for
+// writing. Return value is a number of bytes written.
+func (t *Torrent) savePiece(p *piece.Piece) (n int, err error) {
+	files, err := t.whichFiles(p.Index)
 	if err != nil {
 		return n, err
 	}
 
 	for _, file := range files {
-		file.Open()
-
-		src := io.NewSectionReader(piece, file.PieceStart, file.PieceEnd)
-		var dst io.Writer = file
-		if tracker != nil {
-			dst = io.MultiWriter(dst, tracker)
+		err = file.Open(t.DownloadPath)
+		if err != nil {
+			return n, err
 		}
 
-		written, err := io.Copy(dst, src)
+		done, err := p.Section(file.PieceStart, file.PieceEnd).WriteTo(file)
 		if err != nil {
 			file.Close()
-			return int(n), err
+			return n + int(done), err
 		}
 
+		n += int(done)
 		file.Close()
-
-		n += int(written)
 	}
 
-	if n != len(piece.Content) {
-		err := fmt.Sprintf(
-			"[ERROR] unexpected download volume: expected %d got %d",
-			len(piece.Content),
-			n,
-		)
-
-		log.Println(err)
-
-		return n, errors.New(err)
+	if n != p.Size() {
+		err = fmt.Errorf("copied %d instead of %d", n, p.Size())
 	}
 
 	return n, err
 }
 
+// makeQueue puts each piece into a buffered channel.
+func (t *Torrent) makeQueue() (chan *piece.Piece, error) {
+	queue := make(chan *piece.Piece, len(t.Pieces))
+	for _, piece := range t.Pieces {
+		queue <- &piece
+	}
+
+	return queue, nil
+}
+
 // whichFiles determines which files the piece belongs to by an intersection
 // of absolute offsets and lengths.
-func (torrent *Torrent) whichFiles(piece int) (map[string]utils.FileMap, error) {
-	files := make(map[string]utils.FileMap)
-	offset, length := torrent.pieceBounds(piece)
+func (t *Torrent) whichFiles(p int) ([]utils.FileMap, error) {
+	var files []utils.FileMap
+	pieceOffset, pieceEnd := int(t.Pieces[p].Offset), int(t.Pieces[p].End)
 
-	for _, file := range torrent.Files {
-		intersectOffset := max(offset, file.Offset)
-		intersectLength := min(length, file.Length)
+	for _, file := range t.Files {
+		// Get intersection between piece and file bounds
+		intersectStart := max(pieceOffset, file.Offset)
+		intersectEnd := min(pieceEnd, file.Length)
 
-		if intersectOffset < intersectLength {
-			relativeOffset := intersectOffset - offset
-			relativeLength := intersectLength - intersectOffset
+		if intersectStart < intersectEnd {
+			// Get relative piece bounds
+			relStart := intersectStart - pieceOffset
+			relEnd := relStart + (intersectEnd - intersectStart)
 
-			files[file.Path] = utils.FileMap{
-				FileName:   filepath.Join(torrent.DownloadDir, file.Path),
-				FileOffset: int64(intersectOffset - file.Offset),
-				PieceStart: int64(relativeOffset),
-				PieceEnd:   int64(relativeOffset + relativeLength),
-			}
+			files = append(files, file.MapPiece(intersectStart, relStart, relEnd))
 		}
 	}
 
 	if len(files) == 0 {
-		return nil, fmt.Errorf("no files found for piece %d", piece)
+		return files, fmt.Errorf("no files found for piece %d", p)
 	}
 
 	return files, nil
-}
-
-// startWorker transforms peer into a listener for a task queue and
-// runs it until the queue is empty or until an error occurs.
-func (torrent *Torrent) startWorker(
-	peer peers.Peer,
-	queue chan *worker.Piece,
-	results chan *worker.PieceContent,
-	peers chan *peers.Peer,
-) {
-	w := worker.Create(peer, torrent.InfoHash, torrent.PeerID)
-
-	if err := w.Run(queue, results); err != nil {
-		// Peer should be put back to the pool only if there was no
-		// connection errors, otherwise it's pointless since workers would
-		// constantly try to reconnect to unresponsive peers
-		if err != worker.ErrConn {
-			peers <- &peer
-		}
-	}
 }

@@ -4,6 +4,7 @@ go 1.23.0
 
 require (
 	github.com/jackpal/bencode-go v1.0.2
+	github.com/pasztorpisti/qs v0.0.0-20171216220353-8d6c33ee906c
 	github.com/schollz/progressbar/v3 v3.17.1
 	github.com/stretchr/testify v1.9.0
 )
