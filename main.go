@@ -36,7 +36,7 @@ func main() {
 		exit(err)
 	}
 
-	torrent, err := meta.NewTorrent(peers.NewFromHost(port))
+	torrent, err := meta.NewTorrent(peers.NewFromHost(clientID, port))
 	if err != nil {
 		exit(err)
 	}

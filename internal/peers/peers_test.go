@@ -4,8 +4,25 @@ import (
 	"net"
 	"testing"
 
+	"github.com/sauromates/leech/internal/bthash"
 	"github.com/stretchr/testify/assert"
 )
+
+func TestNew(t *testing.T) {
+	ip, port, hash := "127.0.0.1", uint16(8080), bthash.NewRandom()
+	peer := New(ip, port, hash)
+
+	assert.Equal(t, ip, peer.IP.String())
+	assert.Equal(t, port, peer.Port)
+}
+
+func TestNewFromHost(t *testing.T) {
+	peer := NewFromHost(bthash.NewRandom(), 6881)
+
+	assert.NotNil(t, peer)
+	assert.NotNil(t, peer.IP)
+	assert.Equal(t, uint16(6881), peer.Port)
+}
 
 func TestUnmarshal(t *testing.T) {
 	type testCase struct {

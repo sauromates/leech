@@ -25,7 +25,7 @@ func New(ip string, port uint16, id bthash.Hash) *Peer {
 }
 
 // NewFromHost makes peer from the host system.
-func NewFromHost(port uint16) *Peer {
+func NewFromHost(id bthash.Hash, port uint16) *Peer {
 	conn, err := net.Dial("udp", "8.8.8.8:80")
 	if err != nil {
 		return nil
@@ -33,7 +33,9 @@ func NewFromHost(port uint16) *Peer {
 
 	defer conn.Close()
 
-	return New(conn.LocalAddr().String(), port, bthash.NewRandom())
+	localAddr := conn.LocalAddr().(*net.UDPAddr)
+
+	return &Peer{id, localAddr.IP, port}
 }
 
 // Unmarshal decodes raw bytes into a slice of [Peer] structs.
