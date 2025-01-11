@@ -1,33 +1,41 @@
 // Package metadata provides support for creating and manipulating torrent
 // metadata from different sources like `.torrent` files and magnet links.
+//
+// Metadata is not meant to be used outside of its package except for initial
+// parsing hence unexported structs and methods.
 package metadata
 
 import (
 	"bytes"
 	"crypto/sha1"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
 
 	"github.com/jackpal/bencode-go"
 	"github.com/sauromates/leech/internal/bthash"
+	"github.com/sauromates/leech/internal/peers"
+	"github.com/sauromates/leech/internal/piece"
 	"github.com/sauromates/leech/internal/utils"
+	"github.com/sauromates/leech/torrent"
+	"github.com/sauromates/leech/tracker"
 )
 
-// File represents single entry in torrent's `files` dictionary.
-type File struct {
+// file represents single entry in torrent's `files` dictionary.
+type file struct {
 	Length int      `bencode:"length"`
 	Path   []string `bencode:"path"`
 }
 
-// Info represents common torrent's metadata and is a crucial part of
+// info represents common torrent's metadata and is a crucial part of
 // our knowledge about the torrent.
-type Info struct {
+type info struct {
 	Pieces      string `bencode:"pieces"`
 	PieceLength int    `bencode:"piece length"`
 	Length      int    `bencode:"length"`
 	Name        string `bencode:"name"`
-	Files       []File `bencode:"files"`
+	Files       []file `bencode:"files"`
 }
 
 // Metadata is a top-level dictionary holding torrent info. [Metadata.Announce]
@@ -36,7 +44,7 @@ type Info struct {
 type Metadata struct {
 	Announce string `bencode:"announce"`
 	Comment  string `bencode:"comment"`
-	Info     Info   `bencode:"info"`
+	Info     info   `bencode:"info"`
 }
 
 // Parse attempts to unmarshal given source via [bencode.Unmarshal] and returns
@@ -50,12 +58,42 @@ func Parse(source io.Reader) (*Metadata, error) {
 	return &md, nil
 }
 
-// Hash generates SHA-1 hash sum of bencoded torrent metadata - "info hash".
+// NewTorrent transforms metadata into [torrent.Torrent] struct.
+func (m *Metadata) NewTorrent(client *peers.Peer) (*torrent.Torrent, error) {
+	if m == nil {
+		return nil, errors.New("empty metadata")
+	}
+
+	pieces, err := m.Info.hashPieces()
+	if err != nil {
+		return nil, err
+	}
+
+	infoHash, err := m.Info.hash()
+	if err != nil {
+		return nil, err
+	}
+
+	t := torrent.Torrent{
+		Name:     m.Info.Name,
+		Length:   m.Info.getLength(),
+		InfoHash: infoHash,
+		Client:   client,
+		Pieces:   pieces,
+		Files:    m.Info.getFiles(),
+	}
+
+	t.Tracker = tracker.New(m.Announce, infoHash, client, t.Length)
+
+	return &t, nil
+}
+
+// hash generates SHA-1 hash sum of bencoded torrent metadata - "info hash".
 //
 // Since torrent metadata may hold either `length` or `files` field but never
 // both it's important to remove absent field from a struct first because
 // even nil value will affect the resulted hash sum making it invalid.
-func (i *Info) Hash() (bthash.Hash, error) {
+func (i *info) hash() (bthash.Hash, error) {
 	metadata := map[string]any{
 		"pieces":       i.Pieces,
 		"piece length": i.PieceLength,
@@ -104,10 +142,10 @@ func (i *info) hashPieces() ([]piece.Piece, error) {
 	return pieces, nil
 }
 
-// MapFiles transforms each [File] in torrent's metadata into [utils.PathInfo]
+// mapFiles transforms each [file] in torrent's metadata into [utils.PathInfo]
 // struct with calculated absolute offset and length. These calculated bounds
 // may be used to associate downloadable pieces with correct files.
-func (i *Info) MapFiles() []utils.PathInfo {
+func (i *info) mapFiles() []utils.PathInfo {
 	files := make([]utils.PathInfo, len(i.Files))
 	offset := 0
 
@@ -124,14 +162,13 @@ func (i *Info) MapFiles() []utils.PathInfo {
 	return files
 }
 
-// GetLength returns either length value from torrent's metadata or, in case
+// getLength returns either length value from torrent's metadata or, in case
 // of multi-file torrent, sum of all files lengths.
-func (i *Info) GetLength() int {
+func (i *info) getLength() (length int) {
 	if len(i.Files) == 0 {
 		return i.Length
 	}
 
-	length := 0
 	for _, file := range i.Files {
 		length += file.Length
 	}
@@ -139,12 +176,12 @@ func (i *Info) GetLength() int {
 	return length
 }
 
-// GetFiles returns a slice of torrent's files. Single-file torrents also
+// getFiles returns a slice of torrent's files. Single-file torrents also
 // may use this function, in which case the file would be given a name after
 // the torrent itself and it's bounds would match torrent's size ([0:Length]).
-func (i *Info) GetFiles() []utils.PathInfo {
+func (i *info) getFiles() []utils.PathInfo {
 	if len(i.Files) > 0 {
-		return i.MapFiles()
+		return i.mapFiles()
 	}
 
 	return []utils.PathInfo{{Path: i.Name, Offset: 0, Length: i.Length}}
