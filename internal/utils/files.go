@@ -1,68 +1,59 @@
 package utils
 
 import (
-	"io"
 	"os"
+	"path/filepath"
 )
 
-// PathInfo is processed FileInfo with calculated absolute path, offset
-// within the torrent and relative length
+// PathInfo holds information about torrent's files with absolute positions.
+//
+// [PathInfo.Offset] and [PathInfo.Length] may be used to identify piece
+// file association in torrent.
 type PathInfo struct {
-	// Path is a concatenated path from bencoded FileInfo
-	Path string
-	// Offset is starting point relative to the whole torrent
-	Offset int
-	// Length is an end position within the whole torrent
-	Length int
+	Path   string // Concatenated file path
+	Offset int    // Absolute start position
+	Length int    // Absolute end position
 }
 
-// FileMap holds metadata required to write piece into a specific place
-// inside a file. For convenience it implements both [io.Writer] and
-// [io.WriterAt] interfaces and may be used as [os.File] to open and close
-// it at will.
+// FileMap holds data required to save piece to a file.
 type FileMap struct {
-	// FileName is a full path to a file which can be used to open/close it
-	FileName string
-	// FileOffset is a start position for underlying [io.WriterAt]
-	FileOffset int64
-	// PieceStart is a lower bound for a piece chunk to write
-	PieceStart int64
-	// PieceEnd is an upper bound for a piece chunk to write
-	PieceEnd int64
-	// Descriptor allows to use FileMap as an instance of [os.File]
-	Descriptor *os.File
+	Path       string   // Full path to file
+	Offset     int64    // Start position to write from
+	PieceStart int64    // Offset of the piece to save from
+	PieceEnd   int64    // End of the piece to save from
+	descriptor *os.File // Holds actual file descriptor
 }
 
-// Open uses [os.OpenFile] call to open the file with default settings. In
-// case of success FileMap will receive a pointer to a file descriptor.
-func (fm *FileMap) Open() (io.Writer, error) {
-	file, err := os.OpenFile(fm.FileName, os.O_CREATE|os.O_WRONLY, 0644)
+// MapPiece converts [PathInfo] into [FileMap] with piece bounds and offset
+// relative to file itself and not to the whole torrent.
+func (file *PathInfo) MapPiece(offset, pieceStart, pieceEnd int) FileMap {
+	return FileMap{
+		Path:       file.Path,
+		Offset:     int64(offset - file.Offset),
+		PieceStart: int64(pieceStart),
+		PieceEnd:   int64(pieceEnd),
+	}
+}
+
+// Open calls [os.OpenFile] and uses the result to set internal pointer to
+// opened file.
+func (fm *FileMap) Open(name string) error {
+	fullPath := filepath.Join(name, fm.Path)
+
+	file, err := os.OpenFile(fullPath, os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	fm.Descriptor = file
+	fm.descriptor = file
 
-	return file, nil
+	return err
 }
 
-// Close calls [os.File.Close]
-func (fm *FileMap) Close() error {
-	return fm.Descriptor.Close()
-}
+// Close forwards close call to internal file descriptor.
+func (fm *FileMap) Close() error { return fm.descriptor.Close() }
 
-// Write calls underlying [io.Writer]
+// Write implements [io.Writer] interface via [os.File.WriteAt] call.
 func (fm FileMap) Write(b []byte) (n int, err error) {
-	return fm.writer().Write(b)
-}
-
-// WriteAt calls underlying [io.WriterAt]
-func (fm FileMap) WriteAt(b []byte, off int64) (n int, err error) {
-	return fm.writer().WriteAt(b, off)
-}
-
-// writer returns an instance of [*io.OffsetWriter] which is used in all
-// implementations of [io.Writer] and [io.WriterAt] when dealing with file.
-func (fm *FileMap) writer() *io.OffsetWriter {
-	return io.NewOffsetWriter(fm.Descriptor, fm.FileOffset)
+	return fm.descriptor.WriteAt(b, fm.Offset)
 }
