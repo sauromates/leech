@@ -10,7 +10,6 @@ import (
 	"github.com/sauromates/leech/internal/metadata"
 	"github.com/sauromates/leech/internal/peers"
 	"github.com/sauromates/leech/magnetlink"
-	"github.com/sauromates/leech/torrent"
 )
 
 var (
@@ -30,23 +29,25 @@ func init() {
 func main() {
 	source := os.Args[1]
 
+	defer close(pool)
+
 	meta, err := getMetadata(source)
 	if err != nil {
 		exit(err)
 	}
 
-	dir, err := createDownloadDir(meta.Info.Name)
+	torrent, err := meta.NewTorrent(peers.NewFromHost(port))
 	if err != nil {
 		exit(err)
 	}
 
-	torrent := torrent.Torrent{
-		Meta:         meta,
-		ClientID:     clientID,
-		ClientPort:   port,
-		Peers:        pool,
-		DownloadPath: dir,
+	dir, err := createDownloadDir(torrent.Name)
+	if err != nil {
+		exit(err)
 	}
+
+	torrent.DownloadPath = dir
+	torrent.Peers = pool
 
 	fmt.Printf("Downloading\n---\n%s\n", torrent)
 

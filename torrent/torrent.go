@@ -1,14 +1,11 @@
 package torrent
 
 import (
-	"errors"
 	"fmt"
-	"io"
-	"path/filepath"
 
 	"github.com/sauromates/leech/internal/bthash"
-	"github.com/sauromates/leech/internal/metadata"
 	"github.com/sauromates/leech/internal/peers"
+	"github.com/sauromates/leech/internal/piece"
 	"github.com/sauromates/leech/internal/utils"
 	"github.com/sauromates/leech/tracker"
 	"github.com/sauromates/leech/worker"
@@ -19,10 +16,14 @@ import (
 // about the target metadata along with download path and client info. It
 // should be created as soon as possible, typically within main().
 type Torrent struct {
-	Meta         *metadata.Metadata
-	ClientID     bthash.Hash
-	ClientPort   uint16
+	Name         string
+	Length       int
+	InfoHash     bthash.Hash
+	Client       *peers.Peer
+	Pieces       []piece.Piece
+	Files        []utils.PathInfo
 	Peers        chan *peers.Peer
+	Tracker      *tracker.Tracker
 	DownloadPath string
 }
 
@@ -36,39 +37,30 @@ type Torrent struct {
 // worker goroutine would be started. Download will listen to mentioned
 // channels until the count of downloaded pieces match total piece count.
 func (t *Torrent) Download() error {
-	pieces, err := t.Meta.Info.HashPieces()
+	queue, err := t.makeQueue()
 	if err != nil {
 		return err
 	}
 
-	infoHash, err := t.Meta.Info.Hash()
-	if err != nil {
-		return err
-	}
+	done, results := 0, make(chan *piece.Piece)
+	bar := progressbar.DefaultBytes(int64(t.Length))
 
-	// Fill work queue with pieces to download
-	queue := make(chan *worker.Piece, len(pieces))
-	for i, h := range pieces {
-		queue <- &worker.Piece{Index: i, Hash: h, Length: t.pieceSize(i)}
-	}
-
-	done, results := 0, make(chan *worker.PieceContent)
-	bar := progressbar.DefaultBytes(int64(t.Meta.Info.GetLength()))
-
-	for done < len(pieces) {
+	for done < t.Length {
 		select {
 		// Write each downloaded piece to files
 		case piece := <-results:
-			if err := t.write(piece, bar); err != nil {
+			saved, err := t.savePiece(piece)
+			if err != nil {
 				return err
 			}
 
-			done++
+			done += saved
+			bar.Add(saved)
 		case peer := <-t.Peers:
 			// Run separate goroutine for each new peer
-			job := worker.Create(*peer, infoHash, t.ClientID)
 			go func() {
-				err := job.Run(queue, results)
+				downloader := worker.New(*peer, t.InfoHash, t.Client.ID)
+				err := downloader.Run(queue, results)
 				// Return peer to pool in case of any error except ErrConn
 				if err != nil && err != worker.ErrConn {
 					t.Peers <- peer
@@ -92,129 +84,86 @@ func (t *Torrent) Download() error {
 func (t *Torrent) FindPeers() error {
 	// TODO: go dht.FindPeers(t.Peers)
 
-	tracker, err := t.Tracker()
-	if err != nil {
-		return err
-	}
-
-	if err := tracker.FindPeers(t.Peers); err != nil {
+	if err := t.Tracker.FindPeers(t.Peers); err != nil {
 		return err
 	}
 
 	return nil
-}
-
-// Tracker builds tracker info with torrent's metadata. This info may be used
-// to request peers from tracker (if one exists, which is generally the case
-// only with `.torrent` files).
-func (t *Torrent) Tracker() (*tracker.Tracker, error) {
-	if t.Meta == nil {
-		return nil, errors.New("can't get tracker without torrent metadata")
-	}
-
-	infoHash, err := t.Meta.Info.Hash()
-	if err != nil {
-		return nil, err
-	}
-
-	return &tracker.Tracker{
-		Announce:   t.Meta.Announce,
-		InfoHash:   infoHash,
-		PeerID:     t.ClientID,
-		Port:       t.ClientPort,
-		Uploaded:   0,
-		Downloaded: 0,
-		Compact:    1,
-		Left:       t.Meta.Info.GetLength(),
-	}, nil
 }
 
 // String converts torrent info to default string representation
 func (t Torrent) String() string {
 	return fmt.Sprintf(
 		"Torrent: %s\n---\nTotal size: %.2f Mb\nTotal files: %d\n",
-		t.Meta.Info.Name,
-		float64(t.Meta.Info.GetLength())/(1024*1024),
-		len(t.Meta.Info.GetFiles()),
+		t.Name,
+		float64(t.Length)/(1024*1024),
+		len(t.Files),
 	)
 }
 
-// write copies received piece into associated files.
-//
-// Base scenario is writing to a single file, but pieces may overlap files,
-// in which case we will split piece by relative offset and length and write
-// its parts to multiple associated files
-func (t *Torrent) write(p *worker.PieceContent, bar io.Writer) error {
+// savePiece searches files associated with given piece and passes them for
+// writing. Return value is a number of bytes written.
+func (t *Torrent) savePiece(p *piece.Piece) (n int, err error) {
 	files, err := t.whichFiles(p.Index)
 	if err != nil {
-		return err
+		return n, err
 	}
 
 	for _, file := range files {
-		file.Open()
-
-		var dst io.Writer = file
-		if bar != nil {
-			dst = io.MultiWriter(dst, bar)
+		err = file.Open(t.DownloadPath)
+		if err != nil {
+			return n, err
 		}
 
-		if _, err := p.Save(dst, file.PieceStart, file.PieceEnd); err != nil {
+		done, err := p.Section(file.PieceStart, file.PieceEnd).WriteTo(file)
+		if err != nil {
 			file.Close()
-			return err
+			return n + int(done), err
 		}
 
+		n += int(done)
 		file.Close()
 	}
 
-	return nil
-}
-
-// pieceBounds calculates where the piece with given index begins
-// and ends within the torrent contents
-func (t *Torrent) pieceBounds(p int) (begin, end int) {
-	begin = p * t.Meta.Info.PieceLength
-	end = begin + t.Meta.Info.PieceLength
-
-	maxLength := t.Meta.Info.GetLength()
-	if end > maxLength {
-		end = maxLength
+	if n != p.Size() {
+		err = fmt.Errorf("copied %d instead of %d", n, p.Size())
 	}
 
-	return begin, end
+	return n, err
 }
 
-// pieceSize returns the size of a piece with given index in bytes
-func (t *Torrent) pieceSize(p int) int {
-	begin, end := t.pieceBounds(p)
+// makeQueue puts each piece into a buffered channel.
+func (t *Torrent) makeQueue() (chan *piece.Piece, error) {
+	queue := make(chan *piece.Piece, len(t.Pieces))
+	for _, piece := range t.Pieces {
+		queue <- &piece
+	}
 
-	return end - begin
+	return queue, nil
 }
 
 // whichFiles determines which files the piece belongs to by an intersection
 // of absolute offsets and lengths.
-func (t *Torrent) whichFiles(p int) (map[string]utils.FileMap, error) {
-	files := make(map[string]utils.FileMap)
-	offset, end := t.pieceBounds(p)
+func (t *Torrent) whichFiles(p int) ([]utils.FileMap, error) {
+	var files []utils.FileMap
+	pieceOffset, pieceEnd := int(t.Pieces[p].Offset), int(t.Pieces[p].End)
 
-	for _, file := range t.Meta.Info.GetFiles() {
-		intersectStart := max(offset, file.Offset)
-		intersectEnd := min(end, file.Length)
+	for _, file := range t.Files {
+		// Get intersection between piece and file bounds
+		intersectStart := max(pieceOffset, file.Offset)
+		intersectEnd := min(pieceEnd, file.Length)
 
 		if intersectStart < intersectEnd {
-			relativeStart := intersectStart - offset
-			relativeEnd := intersectEnd - intersectStart
+			// Get relative piece bounds
+			relStart := intersectStart - pieceOffset
+			relEnd := relStart + (intersectEnd - intersectStart)
 
-			files[file.Path] = utils.FileMap{
-				FileName:   filepath.Join(t.DownloadPath, file.Path),
-				FileOffset: int64(intersectStart - file.Offset),
-				PieceStart: int64(relativeStart),
-				PieceEnd:   int64(relativeStart + relativeEnd),
-			}
+			files = append(files, file.MapPiece(intersectStart, relStart, relEnd))
 		}
 	}
 
 	if len(files) == 0 {
-		return files, fmt.Errorf("[ERROR] no files found for piece %d", p)
+		return files, fmt.Errorf("no files found for piece %d", p)
 	}
 
 	return files, nil

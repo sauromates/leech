@@ -1,107 +1,76 @@
 package torrent
 
 import (
+	"math"
 	"os"
 	"testing"
 
 	"github.com/sauromates/leech/internal/bthash"
-	"github.com/sauromates/leech/internal/metadata"
 	"github.com/sauromates/leech/internal/peers"
+	"github.com/sauromates/leech/internal/piece"
 	"github.com/sauromates/leech/internal/utils"
-	"github.com/sauromates/leech/worker"
 	"github.com/stretchr/testify/assert"
 )
-
-func TestPieceBounds(t *testing.T) {
-	type testCase struct {
-		torrent    Torrent
-		pieceIndex int
-		begin      int
-		end        int
-	}
-
-	tt := map[string]testCase{
-		"normal piece": {
-			torrent:    fakeTorrent(50, 100, []metadata.File{}),
-			pieceIndex: 0,
-			begin:      0,
-			end:        50,
-		},
-		"last piece": {
-			torrent:    fakeTorrent(13, 100, []metadata.File{}),
-			pieceIndex: 7,
-			begin:      91,
-			end:        100,
-		},
-	}
-
-	for _, tc := range tt {
-		begin, end := tc.torrent.pieceBounds(tc.pieceIndex)
-
-		assert.Equal(t, tc.begin, begin)
-		assert.Equal(t, tc.end, end)
-	}
-}
 
 func TestWhichFiles(t *testing.T) {
 	type testCase struct {
 		torrent       Torrent
-		expectedFiles []map[string]utils.FileMap
+		expectedFiles [][]utils.FileMap
 		shouldFail    bool
 	}
 
 	tt := map[string]testCase{
 		"piece size equals file size": {
-			torrent: fakeTorrent(50, 100, []metadata.File{
-				{Path: []string{"test1"}, Length: 50},
-				{Path: []string{"test2"}, Length: 100},
+			torrent: fakeTorrent(50, 100, []utils.PathInfo{
+				{Path: "test1", Offset: 0, Length: 50},
+				{Path: "test2", Offset: 50, Length: 100},
 			}),
-			expectedFiles: []map[string]utils.FileMap{
+			expectedFiles: [][]utils.FileMap{
 				{
-					"test1": {FileName: "test1", FileOffset: 0, PieceStart: 0, PieceEnd: 50},
+					{Path: "test1", Offset: 0, PieceStart: 0, PieceEnd: 50},
 				},
 				{
-					"test2": {FileName: "test2", FileOffset: 0, PieceStart: 0, PieceEnd: 50},
+					{Path: "test2", Offset: 0, PieceStart: 0, PieceEnd: 50},
 				},
 			},
 			shouldFail: false,
 		},
 		"piece overlaps two files": {
-			torrent: fakeTorrent(40, 100, []metadata.File{
-				{Path: []string{"test0"}, Length: 50}, // 0: [0-40], 1: [40:50] (size 50)
-				{Path: []string{"test1"}, Length: 30}, // 1: [0:30] (size 30)
-				{Path: []string{"test2"}, Length: 20}, // 2: [0:20] (size 20)
+			torrent: fakeTorrent(40, 100, []utils.PathInfo{
+				{Path: "test0", Offset: 0, Length: 50},   // 0: [0-40], 1: [40:50] (size 50)
+				{Path: "test1", Offset: 50, Length: 80},  // 1: [0:30] (size 30)
+				{Path: "test2", Offset: 80, Length: 100}, // 2: [0:20] (size 20)
 			}),
-			expectedFiles: []map[string]utils.FileMap{
+			expectedFiles: [][]utils.FileMap{
 				{
-					"test0": {FileName: "test0", FileOffset: 0, PieceStart: 0, PieceEnd: 40},
+					{Path: "test0", Offset: 0, PieceStart: 0, PieceEnd: 40},
 				},
 				{
-					"test0": {FileName: "test0", FileOffset: 40, PieceStart: 0, PieceEnd: 10},
-					"test1": {FileName: "test1", FileOffset: 0, PieceStart: 10, PieceEnd: 40},
+					{Path: "test0", Offset: 40, PieceStart: 0, PieceEnd: 10},
+					{Path: "test1", Offset: 0, PieceStart: 10, PieceEnd: 40},
 				},
 				{
-					"test2": {FileName: "test2", FileOffset: 0, PieceStart: 0, PieceEnd: 20},
+					{Path: "test2", Offset: 0, PieceStart: 0, PieceEnd: 20},
 				},
 			},
 			shouldFail: false,
 		},
 		"piece overlaps multiple files": {
-			torrent: fakeTorrent(60, 100, []metadata.File{
-				{Path: []string{"test0"}, Length: 5},
-				{Path: []string{"test1"}, Length: 5},
-				{Path: []string{"test2"}, Length: 30},
-				{Path: []string{"test3"}, Length: 60},
+			torrent: fakeTorrent(60, 100, []utils.PathInfo{
+				{Path: "test0", Offset: 0, Length: 5},
+				{Path: "test1", Offset: 5, Length: 10},
+				{Path: "test2", Offset: 10, Length: 40},
+				{Path: "test3", Offset: 40, Length: 100},
 			}),
-			expectedFiles: []map[string]utils.FileMap{
+			expectedFiles: [][]utils.FileMap{
 				{
-					"test0": {FileName: "test0", FileOffset: 0, PieceStart: 0, PieceEnd: 5},
-					"test1": {FileName: "test1", FileOffset: 0, PieceStart: 5, PieceEnd: 10},
-					"test2": {FileName: "test2", FileOffset: 0, PieceStart: 10, PieceEnd: 40},
-					"test3": {FileName: "test3", FileOffset: 0, PieceStart: 40, PieceEnd: 60},
+					{Path: "test0", Offset: 0, PieceStart: 0, PieceEnd: 5},
+					{Path: "test1", Offset: 0, PieceStart: 5, PieceEnd: 10},
+					{Path: "test2", Offset: 0, PieceStart: 10, PieceEnd: 40},
+					{Path: "test3", Offset: 0, PieceStart: 40, PieceEnd: 60},
 				},
 				{
-					"test3": {FileName: "test3", FileOffset: 20, PieceStart: 0, PieceEnd: 40},
+					{Path: "test3", Offset: 20, PieceStart: 0, PieceEnd: 40},
 				},
 			},
 			shouldFail: false,
@@ -109,7 +78,7 @@ func TestWhichFiles(t *testing.T) {
 	}
 
 	for _, tc := range tt {
-		for i := range len(tc.expectedFiles) {
+		for i := range len(tc.torrent.Pieces) {
 			files, err := tc.torrent.whichFiles(i)
 			if tc.shouldFail {
 				assert.NotNil(t, err)
@@ -122,9 +91,9 @@ func TestWhichFiles(t *testing.T) {
 	}
 }
 
-func TestWrite(t *testing.T) {
+func TestSavePiece(t *testing.T) {
 	type expectation struct {
-		piece *worker.PieceContent
+		piece *piece.Piece
 		files []utils.PathInfo
 	}
 	type testCase struct {
@@ -136,19 +105,19 @@ func TestWrite(t *testing.T) {
 
 	tt := map[string]testCase{
 		"each piece fits into file": {
-			torrent: fakeTorrent(50, 100, []metadata.File{
-				{Path: []string{"test0"}, Length: 50},
-				{Path: []string{"test1"}, Length: 50},
+			torrent: fakeTorrent(50, 100, []utils.PathInfo{
+				{Path: "test0", Offset: 0, Length: 50},
+				{Path: "test1", Offset: 50, Length: 100},
 			}),
 			pieces: []expectation{
 				{
-					piece: &worker.PieceContent{Index: 0, Content: make([]byte, 50)},
+					piece: &piece.Piece{Index: 0, Content: make([]byte, 50)},
 					files: []utils.PathInfo{
 						{Path: "test0", Offset: 0, Length: 50},
 					},
 				},
 				{
-					piece: &worker.PieceContent{Index: 1, Content: make([]byte, 50)},
+					piece: &piece.Piece{Index: 1, Content: make([]byte, 50)},
 					files: []utils.PathInfo{
 						{Path: "test1", Offset: 0, Length: 50},
 					},
@@ -158,27 +127,27 @@ func TestWrite(t *testing.T) {
 			shouldFail: false,
 		},
 		"overlapping piece": {
-			torrent: fakeTorrent(40, 100, []metadata.File{
-				{Path: []string{"test0"}, Length: 50}, // 0: [0-40], 1: [40:50] (size 50)
-				{Path: []string{"test1"}, Length: 30}, // 1: [0:30] (size 30)
-				{Path: []string{"test2"}, Length: 20}, // 2: [0:20] (size 20)
+			torrent: fakeTorrent(40, 100, []utils.PathInfo{
+				{Path: "test0", Offset: 0, Length: 50},   // 0: [0-40], 1: [40:50] (size 50)
+				{Path: "test1", Offset: 50, Length: 80},  // 1: [0:30] (size 30)
+				{Path: "test2", Offset: 80, Length: 100}, // 2: [0:20] (size 20)
 			}),
 			pieces: []expectation{
 				{
-					piece: &worker.PieceContent{Index: 0, Content: make([]byte, 40)},
+					piece: &piece.Piece{Index: 0, Content: make([]byte, 40)},
 					files: []utils.PathInfo{
 						{Path: "test0", Offset: 0, Length: 40},
 					},
 				},
 				{
-					piece: &worker.PieceContent{Index: 1, Content: make([]byte, 40)},
+					piece: &piece.Piece{Index: 1, Content: make([]byte, 40)},
 					files: []utils.PathInfo{
 						{Path: "test0", Offset: 40, Length: 50},
 						{Path: "test1", Offset: 0, Length: 30},
 					},
 				},
 				{
-					piece: &worker.PieceContent{Index: 2, Content: make([]byte, 20)},
+					piece: &piece.Piece{Index: 2, Content: make([]byte, 20)},
 					files: []utils.PathInfo{
 						{Path: "test2", Offset: 0, Length: 20},
 					},
@@ -192,18 +161,21 @@ func TestWrite(t *testing.T) {
 	for name, tc := range tt {
 		fileSizes := make(map[string]int64, 3)
 		for _, expectation := range tc.pieces {
-			err := tc.torrent.write(expectation.piece, nil)
+			_, err := tc.torrent.savePiece(expectation.piece)
 			if tc.shouldFail {
-				assert.NotNil(t, err)
+				assert.Error(t, err)
 			} else {
-				assert.Nil(t, err)
+				assert.NoError(t, err)
 			}
 
 			for _, file := range expectation.files {
 				actualFile, err := os.Stat(file.Path)
+				if err != nil {
+					assert.Fail(t, err.Error())
+				}
+
 				fileSizes[file.Path] = actualFile.Size()
 
-				assert.Nil(t, err)
 				assert.Equal(t, file.Length, int(actualFile.Size()), name+" case, file "+file.Path)
 
 				os.Remove(file.Path)
@@ -219,23 +191,27 @@ func TestWrite(t *testing.T) {
 	}
 }
 
-func fakeTorrent(pieceLength, torrentLength int, files []metadata.File) Torrent {
+// fakeTorrent generates [Torrent] with given parameters.
+func fakeTorrent(pieceLength, torrentLength int, files []utils.PathInfo) Torrent {
 	pool := make(chan *peers.Peer)
 
+	// Go rounds integers down therefore we need to explicitly convert each
+	// value to float64 first and then round division up
+	// e.g. 100/40 = 2, math.Ceil(float64(100)/float64(40)) = 3
+	pieceCount := math.Ceil(float64(torrentLength) / float64(pieceLength))
+	pieces := make([]piece.Piece, int(pieceCount))
+	for i := range int(pieceCount) {
+		offset, end := piece.Bounds(i, pieceLength, torrentLength)
+		pieces[i] = *piece.New(i, bthash.NewRandom(), int64(offset), int64(end))
+	}
+
 	return Torrent{
-		Meta: &metadata.Metadata{
-			Announce: "",
-			Comment:  "",
-			Info: metadata.Info{
-				Pieces:      "",
-				PieceLength: pieceLength,
-				Length:      torrentLength,
-				Name:        "test",
-				Files:       files,
-			},
-		},
-		ClientID:     bthash.NewRandom(),
-		ClientPort:   uint16(6881),
+		Name:         "test",
+		Length:       torrentLength,
+		InfoHash:     bthash.NewRandom(),
+		Pieces:       pieces,
+		Files:        files,
+		Client:       peers.NewFromHost(6881),
 		Peers:        pool,
 		DownloadPath: "",
 	}
